@@ -1,38 +1,36 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Windows.Forms;
+using ReShadeCentralized;
 
-namespace ReShade_Centralized
+namespace ReShade_Centralized;
+
+internal static class Program
 {
-    static class Program
+    [STAThread]
+    private static void Main(string[] args)
     {
-        /// <summary>
-        /// The main entry point for the application.
-        /// </summary>
-
-        //paths for centralized folders
-        public static string shaders = System.String.Empty;
-        public static string textures = System.String.Empty;
-        public static string presets = System.String.Empty; //also reshade config folder
-        public static string screenshots = System.String.Empty;
-        public static string dlls = System.String.Empty;
-        public static string mdlls = System.String.Empty;
-        //public static List<iniEntry> games = new List<iniEntry>();
-
-        public struct iniEntry //This struct is unneeded but is setup this way in case functionality is added where knowing the line number is beneficial.
+        ApplicationConfiguration.Initialize();
+        Application.SetColorMode(SystemInformation.HighContrast ? SystemColorMode.Classic : SystemColorMode.Dark);
+        if (args.Contains("--smoke-test"))
         {
-            public string value; //string on line
-            //public int ln; //line number
+            try
+            {
+                UiPreview.Run(args);
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                Environment.ExitCode = 1;
+            }
+
+            return;
         }
 
-        [STAThread]
-        static void Main()
+        using var instance = new Mutex(true, "Local\\ReShadeCentralized.Manager", out bool first);
+        if (!first)
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new Form1());
+            MessageBox.Show("ReShade Centralized is already running.");
+            return;
         }
 
+        Application.Run(new MainForm(AppContext.BaseDirectory));
     }
 }
-

@@ -338,3 +338,16 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
+
+# Local agent instructions
+AGENTS.md
+
+# Local ReShade downloads, integration fixtures, releases, and portable manager data
+.validation/
+artifacts/
+Backups/
+Staging/
+ReShadeCentralized.json
+ReShadeCentralized.ini
+ReShade_Template.ini
+CatalogCache.ini*
