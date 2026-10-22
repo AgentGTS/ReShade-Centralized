@@ -2,9 +2,36 @@ using System.Drawing.Imaging;
 
 namespace ReShadeCentralized;
 
-internal static class UiPreview
+internal static partial class UiPreview
 {
     public static void Run(string[] args)
+    {
+        Control.CheckForIllegalCrossThreadCalls = true;
+        Exception? failure = null;
+        using var host = new Form { Opacity = 0, ShowInTaskbar = false };
+        host.Shown += (_, _) => host.BeginInvoke(() =>
+        {
+            try
+            {
+                RunChecks(args);
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+            finally
+            {
+                host.Close();
+            }
+        });
+        Application.Run(host);
+        if (failure != null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    private static void RunChecks(string[] args)
     {
         using var main = new MainForm(AppContext.BaseDirectory, preview: true)
         {
@@ -29,6 +56,7 @@ internal static class UiPreview
             return;
         }
 
+        gallery = Path.GetFullPath(gallery);
         Directory.CreateDirectory(gallery);
         TabControl tabs = Descendants(main).OfType<TabControl>().Single();
         for (var index = 0; index < tabs.TabCount; index++)
@@ -99,6 +127,7 @@ internal static class UiPreview
             .Single(combo => combo.Items.Contains(RenderApi.Vulkan));
         ComboBox build = Descendants(game).OfType<ComboBox>()
             .Single(combo => combo.Items.Contains(RuntimeBuild.Standard));
+        CaptureDialog(game, Path.Combine(gallery, "install.png"));
         if (api.GetItemText(RenderApi.Direct3D9) != "DirectX 9")
         {
             throw new InvalidOperationException("The DirectX 9 selection label is incorrect.");
@@ -113,19 +142,21 @@ internal static class UiPreview
             throw new InvalidOperationException("API/build labels changed their underlying selection values.");
         }
 
-        CaptureDialog(game, Path.Combine(gallery, "install.png"));
+        Capture(game, Path.Combine(gallery, "install-selected.png"));
         if (((Button)game.AcceptButton!).Enabled)
         {
             throw new InvalidOperationException("Install is enabled before selecting an executable.");
         }
 
         api.SelectedItem = RenderApi.Vulkan;
-        if (build.Enabled || !Equals(build.SelectedItem, RuntimeBuild.Standard))
+        if (build.Enabled || !Equals(build.SelectedItem, RuntimeBuild.Standard) ||
+            build.GetItemText(build.SelectedItem) != "Standard (Global)")
         {
-            throw new InvalidOperationException("The Vulkan dialog did not lock the global build selection.");
+            throw new InvalidOperationException("The Vulkan dialog must lock the global build selection.");
         }
 
         Capture(game, Path.Combine(gallery, "install-vulkan.png"));
+        VerifyApiDetection(gallery);
         VerifyExistingInstallationNotice(gallery);
         using var backup = new BackupDialog(Path.Combine(gallery, "empty"));
         CaptureDialog(backup, Path.Combine(gallery, "restore.png"));
@@ -197,7 +228,7 @@ internal static class UiPreview
         string directory = Path.Combine(gallery, "unmanaged-install");
         Directory.CreateDirectory(Path.Combine(directory, "reshade-shaders"));
         string path = Path.Combine(directory, "game.exe");
-        File.WriteAllText(path, "UI preview fixture");
+        CreatePreviewExecutable(path);
         File.WriteAllText(Path.Combine(directory, "ReShade.ini"), "[GENERAL]\nPerformanceMode=1\n");
         using var dialog = new GameDialog(RuntimeBuild.Standard);
         dialog.Opacity = 0;
@@ -215,14 +246,18 @@ internal static class UiPreview
             throw new InvalidOperationException("The unmanaged installation warning did not appear below the executable.");
         }
 
+        ComboBox api = Descendants(dialog).OfType<ComboBox>()
+            .Single(control => control.Items.Contains(RenderApi.DXGI));
+        ComboBox build = Descendants(dialog).OfType<ComboBox>()
+            .Single(control => control.Items.Contains(RuntimeBuild.Standard));
+        api.SelectedItem = RenderApi.Direct3D9;
+        build.SelectedItem = RuntimeBuild.Standard;
         if (dialog.Result().Name != "game.exe")
         {
             throw new InvalidOperationException("The game name did not match the executable filename.");
         }
 
         Capture(dialog, Path.Combine(gallery, "install-unmanaged.png"));
-        ComboBox api = Descendants(dialog).OfType<ComboBox>()
-            .Single(control => control.Items.Contains(RenderApi.DXGI));
         api.SelectedItem = RenderApi.DXGI;
         File.WriteAllText(Path.Combine(directory, "dxgi.dll"), "Unrelated DLL preview fixture");
         executable.Text = "";
@@ -233,11 +268,21 @@ internal static class UiPreview
         }
 
         Capture(dialog, Path.Combine(gallery, "install-conflict.png"));
+        int longWarningHeight = dialog.ClientSize.Height;
+        File.Delete(Path.Combine(directory, "ReShade.ini"));
+        executable.Text = "";
+        executable.Text = path;
+        Capture(dialog, Path.Combine(gallery, "install-short-warning.png"));
+        if (dialog.ClientSize.Height >= longWarningHeight)
+        {
+            throw new InvalidOperationException("A shorter installation warning must shrink the dialog.");
+        }
         executable.Text = Path.Combine(directory, "missing.exe");
         if (warning.Visible || dialog.ClientSize.Height != originalHeight || dialog.Result().Name != "missing.exe")
         {
             throw new InvalidOperationException("The installation warning did not clear after changing the executable.");
         }
+        Capture(dialog, Path.Combine(gallery, "install-warning-cleared.png"));
     }
 
     private static string? Argument(string[] args, string name)
@@ -301,14 +346,51 @@ internal static class UiPreview
         form.PerformLayout();
         form.Refresh();
         Application.DoEvents();
-        VerifyCommandLayout(form);
         using var bitmap = new Bitmap(form.Width, form.Height);
         form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
         bitmap.Save(path, ImageFormat.Png);
+        VerifyCommandLayout(form);
     }
 
     private static void VerifyCommandLayout(Form form)
     {
+        foreach (Button browse in Descendants(form).OfType<Button>().Where(control =>
+            control.AccessibleName is "Browse for a file" or "Browse for a folder"))
+        {
+            TextBox input = browse.Parent!.Controls.OfType<TextBox>().Single();
+            if (input.Height != browse.Height || input.Top != browse.Top || input.Bottom > input.Parent!.ClientSize.Height)
+            {
+                throw new InvalidOperationException($"The browse button is misaligned with its input in '{form.Text}'.");
+            }
+        }
+
+        if (form is GameDialog)
+        {
+            TableLayoutPanel layout = form.Controls.OfType<TableLayoutPanel>().Single();
+            VerifyInstallDialogSpacing(form, layout);
+            foreach (Label label in layout.Controls.OfType<Label>())
+            {
+                int row = layout.GetRow(label);
+                Control input = layout.GetControlFromPosition(1, row)!;
+                int labelCenter = label.Top + (label.Height / 2);
+                int inputCenter = input.Top + (input.Height / 2);
+                if (Math.Abs(labelCenter - inputCenter) > 1)
+                {
+                    throw new InvalidOperationException($"The '{label.Text}' label is misaligned with its input.");
+                }
+            }
+            foreach (Control control in layout.Controls.Cast<Control>().Where(control => control.Visible))
+            {
+                if (control.Left < layout.Padding.Left || control.Top < layout.Padding.Top ||
+                    control.Right > layout.ClientSize.Width - layout.Padding.Right ||
+                    control.Bottom > layout.ClientSize.Height - layout.Padding.Bottom)
+                {
+                    throw new InvalidOperationException($"The install dialog clips {control.GetType().Name} " +
+                        $"'{control.AccessibleName ?? control.Text}' at {control.Bounds} within {layout.ClientSize}.");
+                }
+            }
+        }
+
         if (form is MainForm)
         {
             ComboBox selector = Descendants(form).OfType<ComboBox>()
@@ -338,6 +420,51 @@ internal static class UiPreview
                     throw new InvalidOperationException($"The command '{control.Text}' is clipped in '{form.Text}'.");
                 }
             }
+        }
+    }
+
+    private static void VerifyInstallDialogSpacing(Form form, TableLayoutPanel layout)
+    {
+        Control browse = Descendants(form).OfType<TextBox>().Single().Parent!;
+        LinkLabel hint = Descendants(form).OfType<LinkLabel>().Single();
+        ApiCheckIcon icon = Descendants(form).OfType<ApiCheckIcon>().Single();
+        Control detection = hint.Parent!;
+        Label warning = Descendants(form).OfType<Label>().Single(label =>
+            label.AccessibleName == "Existing ReShade installation");
+        Control notice = warning.Parent!;
+        ComboBox api = Descendants(form).OfType<ComboBox>().Single(combo => combo.Items.Contains(RenderApi.Vulkan));
+        ComboBox build = Descendants(form).OfType<ComboBox>().Single(combo =>
+            combo.Items.Contains(RuntimeBuild.Standard));
+        var accept = (Button)form.AcceptButton!;
+        Control footer = accept.Parent!;
+        int smallGap = (int)Math.Round(8 * form.DeviceDpi / 96.0);
+        int fieldGap = (int)Math.Round(16 * form.DeviceDpi / 96.0);
+        int footerGap = (int)Math.Round(24 * form.DeviceDpi / 96.0);
+        Control beforeApi = warning.Visible ? notice : browse;
+        if (detection.Top != layout.Padding.Top || browse.Top - detection.Bottom != smallGap ||
+            (warning.Visible && notice.Top - browse.Bottom != smallGap) ||
+            api.Top - beforeApi.Bottom != fieldGap || build.Top - api.Bottom != fieldGap ||
+            footer.Top - build.Bottom != footerGap)
+        {
+            throw new InvalidOperationException("Install dialog gaps must remain consistent as hints and warnings change.");
+        }
+        if (browse.Left != api.Left || build.Left != api.Left || detection.Left != api.Left ||
+            hint.Left != icon.Right + icon.Margin.Right || hint.Right > detection.ClientSize.Width ||
+            (warning.Visible && notice.Left != api.Left) ||
+            layout.Right != form.ClientSize.Width || layout.Bottom != form.ClientSize.Height ||
+            footer.Right != api.Right || footer.Left != layout.Padding.Left ||
+            footer.Bottom != form.ClientSize.Height - layout.Padding.Bottom ||
+            accept.Top != 0 || footer.Left + accept.Right != api.Right ||
+            footer.Top + accept.Bottom != footer.Bottom)
+        {
+            throw new InvalidOperationException("Install dialog fields and buttons must share the same outer padding.");
+        }
+        if (warning.Visible && notice.Height != Math.Max(
+            warning.GetPreferredSize(new Size(warning.Width, 0)).Height,
+            notice.Controls.Cast<Control>().Where(control => control != warning)
+                .Max(control => control.Height + control.Margin.Vertical)))
+        {
+            throw new InvalidOperationException("Installation warnings must fit their current text without unused space.");
         }
     }
 

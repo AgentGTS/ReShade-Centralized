@@ -86,6 +86,24 @@ internal static partial class TestSuite
         Directory.CreateDirectory(testRoot);
         Console.WriteLine("Isolated test workspace: " + testRoot);
         await RunTestAsync(
+            "Graphics API detection reads x86/x64 normal and delay imports and leaves ambiguous APIs unresolved",
+            GraphicsApiDetectionFindsOnlyUnambiguousImportsAsync);
+        await RunTestAsync(
+            "Graphics API detection fails open for missing, locked and malformed files and honors cancellation",
+            GraphicsApiDetectionFailsOpenAndHonorsCancellationAsync);
+        await RunTestAsync(
+            "Graphics API detection rejects invalid directory bounds, unterminated tables and unsupported machines",
+            GraphicsApiDetectionRejectsInvalidDirectoriesAndMachinesAsync);
+        await RunTestAsync(
+            "Graphics API detection handles read-only executables without edits or retained file handles",
+            GraphicsApiDetectionLeavesFilesUnchangedAndReleasesHandlesAsync);
+        await RunTestAsync(
+            "Game paths reject unsafe locations, malformed files and DLLs before inspection",
+            GamePathValidationRejectsUnsafeAndNonExecutablePathsAsync);
+        await RunTestAsync(
+            "Game paths reject executable links and linked parent directories",
+            GamePathValidationRejectsLinksAsync);
+        await RunTestAsync(
             "INI preserves sections, unknown settings, comments, and escaped commas",
             IniPreservesCustomSettingsAndEscapedCommasAsync);
         await RunTestAsync(

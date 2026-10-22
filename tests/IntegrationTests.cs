@@ -53,7 +53,7 @@ internal static partial class TestSuite
         string executable = Path.Combine(gameDirectory, "game.exe");
         string proxy = Path.Combine(gameDirectory, "dxgi.dll");
         string runtime = Path.Combine(state.Paths.StandardBinaries, "ReShade64.dll");
-        File.Copy(runtime, executable);
+        File.WriteAllBytes(executable, CreateExecutableWithImports(true, ["dxgi.dll"]));
         File.Copy(runtime, proxy);
         string config = Path.Combine(gameDirectory, "ReShade.ini");
         const string originalConfig = "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\n";
@@ -64,6 +64,9 @@ internal static partial class TestSuite
         AssertTrue(notice != null && !notice.BlocksInstallation);
         AssertTrue(notice!.Message.Contains("dxgi.dll") && notice.Message.Contains("ReShade.ini") &&
             notice.Message.Contains("reshade-shaders"));
+
+        notice = DeploymentService.InspectExistingInstallation(executable, null, []);
+        AssertTrue(notice != null && !notice.BlocksInstallation && notice.Message.Contains("dxgi.dll"));
 
         notice = DeploymentService.InspectExistingInstallation(executable, RenderApi.OpenGL, []);
         AssertTrue(notice!.BlocksInstallation && notice.Message.Contains("matching Graphics API"));

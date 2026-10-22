@@ -4,14 +4,16 @@ Run ReShade Centralized as administrator from a permanent folder. On first launc
 
 1. Open Runtime & storage > Update ReShade. This downloads the standard runtime and the version with add-on support, for both x86 and x64 games.
 2. Open Shader packages, select the effects you want, and choose Install / update selected. Required standard effects stay selected.
-3. Open Games > Install game. Select the executable that actually runs the game, its graphics API, and its build. The app detects its architecture and uses the executable filename in the table.
+3. Open Games > Install game. Browse for the executable that actually runs the game, then select its graphics API and ReShade build. The app may recommend an API above the executable input, but never changes your API selection. Install becomes available once both choices are selected. Vulkan automatically uses the global build. The app detects the executable's architecture and uses its filename in the table.
 4. Launch the game normally. Open ReShade's in-game overlay to choose effects and save your preset.
 
 CHOOSING AN API AND BUILD
 
 Choose DirectX 9 for DirectX 9 games, DXGI (DirectX 10/11/12) for those DirectX versions, OpenGL for OpenGL games, or Vulkan for Vulkan games. Match the graphics API selected in the game's settings. If you change that setting later, use Games > Repair / edit to update the installation.
 
-Standard is the default build. Choose Standard + add-on support only when you need an add-on that requires it. Add-ons are installed manually; this app does not download them.
+Browsing to an executable starts one API check. If you type or paste its path instead, click Check graphics API above the executable input. Enter in the executable input does not run the check or confirm the dialog. Only a valid local x86/x64 executable outside Windows folders can be inspected. A small spinner above the input shows that it is checking, followed by a recommended API or a message that it could not identify it. Typing alone does not start detection. The check reads DLL imports without running the game and only provides a hint; it never changes either selection. Games with multiple renderers or dynamically loaded graphics libraries may have no recommendation.
+
+Choose Standard for normal use, or Standard + add-on support when you need an add-on that requires it. Add-ons are installed manually; this app does not download them. Selecting Vulkan locks the build picker to the app's current global build. Change that global build from Runtime & storage > Vulkan - all games.
 
 DirectX and OpenGL use a small DLL link beside each selected executable. Each link points to the central runtime for that game's build and architecture. Adding a game does not hook other games automatically.
 

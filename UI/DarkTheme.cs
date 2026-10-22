@@ -20,6 +20,8 @@ internal static class DarkTheme
         SystemInformation.HighContrast ? SystemColors.WindowText : Color.FromArgb(162, 175, 191);
     public static Color Accent =>
         SystemInformation.HighContrast ? SystemColors.Highlight : Color.FromArgb(104, 221, 192);
+    public static Color Warning =>
+        SystemInformation.HighContrast ? SystemColors.WindowText : Color.FromArgb(242, 199, 91);
     public static Color OnAccent =>
         SystemInformation.HighContrast ? SystemColors.HighlightText : Color.FromArgb(15, 35, 32);
     public static Color Hover => SystemInformation.HighContrast ? SystemColors.Highlight : Color.FromArgb(49, 61, 73);

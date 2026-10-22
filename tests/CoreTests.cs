@@ -8,7 +8,7 @@ internal static partial class TestSuite
     {
         string directory = CreateTestDirectory("installation-notice");
         string executable = Path.Combine(directory, "game.exe");
-        File.WriteAllText(executable, "Inspection fixture");
+        File.WriteAllBytes(executable, CreateExecutableWithImports(true, ["dxgi.dll"]));
         string shaders = Path.Combine(directory, "reshade-shaders");
         Directory.CreateDirectory(shaders);
         AssertTrue(DeploymentService.InspectExistingInstallation(executable, RenderApi.DXGI, []) == null);

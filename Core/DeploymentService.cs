@@ -24,17 +24,18 @@ public sealed class DeploymentService
 
     public static ExistingInstallationNotice? InspectExistingInstallation(
         string executable,
-        RenderApi api,
+        RenderApi? api,
         IReadOnlyList<OwnedLink> managedLinks,
         string? managedConfigPath = null)
     {
-        if (!File.Exists(executable) || !Path.GetExtension(executable).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+        string? gamePath = PortableExecutable.GetValidatedGamePath(executable);
+        if (gamePath == null)
         {
             return null;
         }
 
-        string directory = Path.GetDirectoryName(Path.GetFullPath(executable))!;
-        string? proxy = Proxy(api);
+        string directory = Path.GetDirectoryName(gamePath)!;
+        string? proxy = api.HasValue ? Proxy(api.Value) : null;
         var unmanaged = new List<string>();
         var changed = new List<string>();
         var otherApis = new List<string>();
@@ -68,7 +69,7 @@ public sealed class DeploymentService
             else if (PortableExecutable.IsReShade(path))
             {
                 unmanaged.Add(name);
-                if (name != proxy)
+                if (api.HasValue && name != proxy)
                 {
                     otherApis.Add(name);
                 }
