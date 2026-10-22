@@ -23,7 +23,7 @@ public sealed class MainForm : Form
         AllowUserToDeleteRows = false,
         MultiSelect = false,
         SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells,
         RowHeadersVisible = false
     };
 
@@ -56,28 +56,52 @@ public sealed class MainForm : Form
 
     private readonly Label versionsLabel = new()
     {
-        AutoSize = true,
-        Font = DarkTheme.SmallFont
+        AutoSize = true
     };
 
     private readonly Label statusLabel = new()
     {
-        AutoSize = true,
+        Dock = DockStyle.Fill,
+        AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft,
         Text = "Ready",
         Margin = new Padding(8)
+    };
+
+    private readonly Label runtimeStatusLabel = new()
+    {
+        AutoSize = true,
+        Anchor = AnchorStyles.Left,
+        AccessibleName = "Installed ReShade",
+        Margin = new Padding(16, 0, 16, 0)
     };
 
     private readonly DarkComboBox vulkanBuildSelector = new()
     {
         DropDownStyle = ComboBoxStyle.DropDownList,
-        Width = 150
+        Width = 260
     };
 
-    private readonly ListBox externalVulkanAppsList = new()
+    private readonly VulkanGamesList vulkanGamesList = new()
     {
         Width = 800,
         Height = 105,
         HorizontalScrollbar = true
+    };
+
+    private readonly Label vulkanStatusLabel = new()
+    {
+        AutoSize = true,
+        Dock = DockStyle.Fill,
+        AccessibleName = "Vulkan registration status",
+        Margin = Padding.Empty
+    };
+
+    private readonly Panel vulkanWarningIcon = new()
+    {
+        Size = new Size(16, 16),
+        Margin = new Padding(0, 2, 8, 0),
+        AccessibleName = "Warning"
     };
 
     private readonly FlatButton cancelButton = new("Cancel")
@@ -87,10 +111,12 @@ public sealed class MainForm : Form
     };
 
     private readonly HashSet<string> selectedPackageIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<(Button Button, Func<bool> IsAvailable)> actionAvailability = [];
     private readonly IProgress<string> progress;
     private List<ShaderPackage> catalog = [];
     private CancellationTokenSource? operationCancellation;
     private bool updatingPackages;
+    private string? lastVulkanInspectionError;
 
     public MainForm(string applicationDirectory, bool preview = false)
     {
@@ -105,48 +131,72 @@ public sealed class MainForm : Form
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            RowCount = 4,
+            RowCount = 2,
             ColumnCount = 1,
             Padding = new Padding(24)
         };
-        root.RowStyles.Add(new(SizeType.AutoSize));
-        root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize));
         Controls.Add(root);
-        root.Controls.Add(new Label
-        {
-            Text = "ReShade Centralized",
-            AutoSize = true,
-            Font = DarkTheme.TitleFont
-        });
-        versionsLabel.Margin = new Padding(0, 5, 0, 20);
-        root.Controls.Add(versionsLabel);
         root.Controls.Add(tabs);
         var footer = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
+            ColumnCount = 4,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Margin = new Padding(0, 12, 0, 0)
         };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        statusLabel.Anchor = AnchorStyles.Left;
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         statusLabel.Margin = Padding.Empty;
         footer.Controls.Add(statusLabel, 0, 0);
-        footer.Controls.Add(cancelButton, 1, 0);
+        footer.Controls.Add(runtimeStatusLabel, 1, 0);
+        footer.Controls.Add(cancelButton, 2, 0);
+        var helpButton = new FlatButton("?")
+        {
+            AutoSize = false,
+            Size = new Size(36, 36),
+            Padding = Padding.Empty,
+            Margin = new Padding(8, 0, 0, 0),
+            Dock = DockStyle.Fill,
+            AccessibleName = "Help",
+            AccessibleDescription = "Open the user guide. Shortcut: F1."
+        };
+        helpButton.Click += (_, _) => ShowHelp();
+        footer.Controls.Add(helpButton, 3, 0);
+        HelpRequested += (_, e) =>
+        {
+            ShowHelp();
+            e.Handled = true;
+        };
         root.Controls.Add(footer);
         cancelButton.Click += (_, _) => operationCancellation?.Cancel();
         BuildGames();
         BuildPackages();
         BuildSettings();
-        TableLayoutPanel activity = CreatePage("Activity", "Activity", "Downloads, repairs, and operation details.");
+        tabs.SelectedIndexChanged += (_, _) =>
+        {
+            if (tabs.SelectedIndex == 2 && operationCancellation == null)
+            {
+                RefreshVulkanStatus();
+            }
+        };
+        vulkanBuildSelector.SelectedIndexChanged += (_, _) =>
+        {
+            if (tabs.SelectedIndex == 2 && operationCancellation == null)
+            {
+                RefreshVulkanStatus();
+            }
+        };
+        TableLayoutPanel activity = CreatePage("Activity");
         activityLog.Font = DarkTheme.MonospaceFont;
         activityLog.WordWrap = false;
         activityLog.ScrollBars = ScrollBars.Both;
-        activity.Controls.Add(activityLog, 0, 2);
+        activity.Controls.Add(activityLog, 0, 0);
+        activity.SetRowSpan(activityLog, 3);
         if (!preview)
         {
             Shown += async (_, _) => await InitializeAsync();
@@ -170,9 +220,25 @@ public sealed class MainForm : Form
         }
     }
 
-    private Button CreateActionButton(string label, Func<Task> action, bool primary = false)
+    private void ShowHelp()
+    {
+        using var dialog = new HelpDialog();
+        dialog.ShowDialog(this);
+    }
+
+    private Button CreateActionButton(
+        string label,
+        Func<Task> action,
+        bool primary = false,
+        Func<bool>? isAvailable = null)
     {
         var button = new FlatButton(label, primary);
+        if (isAvailable != null)
+        {
+            actionAvailability.Add((button, isAvailable));
+            button.Enabled = isAvailable();
+        }
+
         button.Click += async (_, _) =>
         {
             try
@@ -185,6 +251,19 @@ public sealed class MainForm : Form
             }
         };
         return button;
+    }
+
+    private void UpdateActionAvailability()
+    {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        foreach ((Button button, Func<bool> isAvailable) in actionAvailability)
+        {
+            button.Enabled = isAvailable();
+        }
     }
 
     private async Task InitializeAsync()
@@ -230,16 +309,25 @@ public sealed class MainForm : Form
 
     private void BuildGames()
     {
-        TableLayoutPanel layout = CreatePage("Games", "Managed games",
-            "Shared runtimes. Independent settings, presets, and screenshots for every game.");
+        TableLayoutPanel layout = CreatePage("Games");
         FlowLayoutPanel commands = CreateCommandBar();
-        commands.Controls.Add(CreateActionButton("Install to game", OnInstallToGameAsync, primary: true));
-        commands.Controls.Add(CreateActionButton("Repair / edit selected", EditSelectedAsync));
-        commands.Controls.Add(CreateActionButton("Remove selected", OnRemoveSelectedAsync));
-        commands.Controls.Add(CreateActionButton("Repair all", OnRepairAllAsync));
-        commands.Controls.Add(CreateActionButton("Open profile", OnOpenProfileAsync));
-        layout.Controls.Add(commands, 0, 1);
-        layout.Controls.Add(gamesGrid, 0, 2);
+        commands.Controls.Add(CreateActionButton("Install game...", OnInstallToGameAsync, primary: true));
+        commands.Controls.Add(CreateActionButton("Repair / edit...", EditSelectedAsync,
+            isAvailable: () => gamesGrid.SelectedRows.Count > 0));
+        commands.Controls.Add(CreateActionButton("Remove", OnRemoveSelectedAsync,
+            isAvailable: () => gamesGrid.SelectedRows.Count > 0));
+        commands.Controls.Add(CreateActionButton("Repair all", OnRepairAllAsync,
+            isAvailable: () => gamesGrid.Rows.Count > 0));
+        commands.Controls.Add(CreateActionButton("Open profile", OnOpenProfileAsync,
+            isAvailable: () => gamesGrid.SelectedRows.Count > 0));
+        commands.Controls.Add(CreateActionButton("Open game folder", OnOpenGameFolderAsync,
+            isAvailable: () => gamesGrid.SelectedRows.Count > 0 &&
+                gamesGrid.SelectedRows[0].Cells["Executable"].Value is string executable &&
+                Path.IsPathFullyQualified(executable)));
+        gamesGrid.SelectionChanged += (_, _) => UpdateActionAvailability();
+        gamesGrid.DataBindingComplete += (_, _) => UpdateActionAvailability();
+        layout.Controls.Add(commands, 0, 0);
+        layout.Controls.Add(gamesGrid, 0, 1);
         gamesGrid.Margin = Padding.Empty;
         gamesGrid.CellDoubleClick += async (_, e) =>
         {
@@ -260,14 +348,20 @@ public sealed class MainForm : Form
     private GameProfile GetSelectedGame()
     {
         string? id = gamesGrid.CurrentRow?.Cells["Id"].Value as string;
-        return manager.State!.Games.SingleOrDefault(game => game.Id == id) ??
-            throw new InvalidOperationException("Select a managed game first.");
+        return RequireState().Games.SingleOrDefault(game => game.Id == id) ??
+            throw new InvalidOperationException("No game is selected. Open Games and select a row. " +
+                "To add a game first, choose Install game.");
     }
+
+    private ManagerState RequireState() => manager.State ??
+        throw new InvalidOperationException("No central folder is configured. Restart ReShade Centralized " +
+            "and complete Setup before using this action.");
 
     private async Task EditSelectedAsync()
     {
         GameProfile game = GetSelectedGame();
-        using var dialog = new GameDialog(manager.State!.VulkanBuild, game);
+        ManagerState state = RequireState();
+        using var dialog = new GameDialog(state.VulkanBuild, game, state.Games);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             await RunOperationAsync(
@@ -278,45 +372,23 @@ public sealed class MainForm : Form
 
     private void BuildPackages()
     {
-        TableLayoutPanel layout = CreatePage("Shader packages", "Shader packages",
-            "Choose the effects you need. Includes and textures stay organized by package.");
-        var search = new TableLayoutPanel
-        {
-            AutoSize = true,
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            Margin = new Padding(0, 0, 0, 16)
-        };
-        search.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        search.Controls.Add(new Label { Text = "Search packages", AutoSize = true, Margin = new Padding(0, 0, 0, 6) });
+        TableLayoutPanel layout = CreatePage("Shader packages");
         packageSearchBox.Dock = DockStyle.Fill;
-        packageSearchBox.Margin = Padding.Empty;
+        packageSearchBox.Margin = new Padding(0, 0, 0, 12);
         packageSearchBox.AccessibleName = "Search shader packages";
-        search.Controls.Add(packageSearchBox);
-        layout.Controls.Add(search, 0, 1);
+        layout.Controls.Add(packageSearchBox, 0, 0);
         packageList.Font = new Font("Segoe UI", 11);
         packageList.Margin = Padding.Empty;
-        layout.Controls.Add(packageList, 0, 2);
-        var footer = new TableLayoutPanel
-        {
-            AutoSize = true,
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            Margin = new Padding(0, 12, 0, 0)
-        };
-        footer.Controls.Add(new Label
-        {
-            Text = "Deselecting a package keeps its installed files. Required packages are always included.",
-            AutoSize = true,
-            Margin = new Padding(0, 0, 0, 12)
-        });
+        layout.Controls.Add(packageList, 0, 1);
         FlowLayoutPanel commands = CreateCommandBar();
+        commands.Margin = new Padding(0, 12, 0, 0);
         commands.Controls.Add(CreateActionButton(
-            "Install / update selected", OnInstallUpdateSelectedAsync, primary: true));
-        commands.Controls.Add(CreateActionButton("Update installed packages", OnUpdateInstalledPackagesAsync));
+            "Install / update selected", OnInstallUpdateSelectedAsync, primary: true,
+            isAvailable: () => selectedPackageIds.Count > 0));
+        commands.Controls.Add(CreateActionButton("Update installed packages", OnUpdateInstalledPackagesAsync,
+            isAvailable: () => manager.State?.Packages.Count > 0));
         commands.Controls.Add(CreateActionButton("Refresh catalog", OnRefreshCatalogAsync));
-        footer.Controls.Add(commands);
-        layout.Controls.Add(footer, 0, 3);
+        layout.Controls.Add(commands, 0, 2);
         packageSearchBox.TextChanged += (_, _) => FilterPackages();
         packageList.ItemCheck += (_, e) =>
         {
@@ -339,6 +411,8 @@ public sealed class MainForm : Form
             {
                 selectedPackageIds.Remove(item.Id);
             }
+
+            UpdateActionAvailability();
         };
     }
 
@@ -374,17 +448,25 @@ public sealed class MainForm : Form
 
         packageList.EndUpdate();
         updatingPackages = false;
+        UpdateActionAvailability();
     }
 
     private Task UpdatePackagesAsync(bool installedOnly)
     {
         return RunOperationAsync("Updating shader packages", async cancellationToken =>
         {
+            ManagerState state = RequireState();
+            if (installedOnly && state.Packages.Count == 0)
+            {
+                throw new InvalidOperationException("No shader packages are installed. In Shader packages, " +
+                    "select packages and choose Install / update selected before using Update installed packages.");
+            }
+
             HashSet<string> ids = installedOnly ?
-                manager.State!.Packages.Select(package => package.Id).ToHashSet() :
+                state.Packages.Select(package => package.Id).ToHashSet() :
                 selectedPackageIds;
             var chosen = catalog.Where(package => ids.Contains(package.Id)).ToList();
-            var unavailablePackages = manager.State!.Packages.Where(package =>
+            var unavailablePackages = state.Packages.Where(package =>
                 ids.Contains(package.Id) && !catalog.Any(entry => entry.Id == package.Id));
             foreach (InstalledPackage missing in unavailablePackages)
             {
@@ -397,25 +479,32 @@ public sealed class MainForm : Form
                 });
             }
 
-            foreach (string message in await manager.UpdatePackagesAsync(
+            PackageUpdateReport report = await manager.UpdatePackagesWithReportAsync(
                 chosen,
                 catalog,
                 progress,
                 cancellationToken,
-                !installedOnly))
-            {
-                WriteLog(message);
-            }
+                !installedOnly);
+            WriteLog(report.Summary);
 
             SynchronizePackageChoices();
             FilterPackages();
-        });
+            if (report.FailedCount > 0)
+            {
+                tabs.SelectedIndex = 3;
+                string outcome = report.InstalledCount > 0 ? "Successful packages are installed." :
+                    "No packages were installed during this run. Existing files were retained.";
+                MessageBox.Show(this,
+                    report.Summary + "\n\n" + outcome + " Activity lists each failure and " +
+                    "its recovery steps. Retry failed packages in Shader packages > Install / update selected.",
+                    "Shader packages", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }, reportCompletion: false);
     }
 
     private void BuildSettings()
     {
-        TableLayoutPanel layout = CreatePage("Runtime & storage", "Runtime & storage",
-            "Update shared binaries, manage the Vulkan layer, and maintain central storage.");
+        TableLayoutPanel layout = CreatePage("Runtime & storage");
         var viewport = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
         var sections = new TableLayoutPanel
         {
@@ -427,40 +516,58 @@ public sealed class MainForm : Form
         };
         sections.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         viewport.Controls.Add(sections);
-        layout.Controls.Add(viewport, 0, 2);
+        layout.Controls.Add(viewport, 0, 0);
+        layout.SetRowSpan(viewport, 3);
 
         TableLayoutPanel runtime = CreateSection(sections, "ReShade runtime");
-        AddSectionRow(runtime, new Label
-        {
-            Text = "Standard and full-add-on builds are shared across your managed games.",
-            AutoSize = true
-        });
+        AddSectionRow(runtime, versionsLabel);
         FlowLayoutPanel runtimeCommands = CreateCommandBar();
         runtimeCommands.Controls.Add(CreateActionButton("Update ReShade", OnUpdateReShadeAsync, primary: true));
         runtimeCommands.Controls.Add(CreateActionButton("Import downloaded installers...", ImportRuntimeAsync));
         AddSectionRow(runtime, runtimeCommands);
 
-        TableLayoutPanel vulkan = CreateSection(sections, "Vulkan layer");
-        AddSectionRow(vulkan, new Label
+        TableLayoutPanel vulkan = CreateSection(sections, "Vulkan — all games");
+        var vulkanStatus = new TableLayoutPanel
         {
-            Text = "The build selection applies to every Vulkan consumer. Games keep their own settings and presets.",
-            AutoSize = true
-        });
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2
+        };
+        vulkanStatus.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        vulkanStatus.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        vulkanWarningIcon.Paint += (_, e) => e.Graphics.DrawIcon(SystemIcons.Warning,
+            vulkanWarningIcon.ClientRectangle);
+        vulkanStatus.Controls.Add(vulkanWarningIcon, 0, 0);
+        vulkanStatus.Controls.Add(vulkanStatusLabel, 1, 0);
+        vulkanStatus.SizeChanged += (_, _) => vulkanStatusLabel.MaximumSize =
+            new Size(Math.Max(1, vulkanStatus.ClientSize.Width - LogicalToDeviceUnits(24)), 0);
+        AddSectionRow(vulkan, vulkanStatus);
         vulkanBuildSelector.Items.AddRange(Enum.GetValues<RuntimeBuild>().Cast<object>().ToArray());
         vulkanBuildSelector.SelectedItem = RuntimeBuild.Standard;
         vulkanBuildSelector.AccessibleName = "Global Vulkan build";
         FlowLayoutPanel vulkanCommands = CreateCommandBar();
+        vulkanBuildSelector.Margin = new Padding(0, 0, 8, 8);
+        Button applyVulkan = CreateActionButton("Apply / repair", OnApplyRepairVulkanAsync);
         vulkanCommands.Controls.Add(vulkanBuildSelector);
-        vulkanCommands.Controls.Add(CreateActionButton("Apply / repair Vulkan", OnApplyRepairVulkanAsync));
+        vulkanCommands.Controls.Add(applyVulkan);
+        vulkanCommands.Layout += (_, _) =>
+        {
+            int heightDifference = applyVulkan.Height - vulkanBuildSelector.Height;
+            if (heightDifference != 0)
+            {
+                vulkanBuildSelector.ItemHeight = Math.Max(1, vulkanBuildSelector.ItemHeight + heightDifference);
+            }
+        };
         AddSectionRow(vulkan, vulkanCommands);
-        AddSectionRow(vulkan, new Label { Text = "Existing consumers", AutoSize = true });
-        externalVulkanAppsList.Dock = DockStyle.Fill;
-        externalVulkanAppsList.AccessibleName = "Existing Vulkan consumers";
-        AddSectionRow(vulkan, externalVulkanAppsList);
+        TableLayoutPanel externalGames = CreateSection(sections, "Vulkan games");
+        vulkanGamesList.Dock = DockStyle.Fill;
+        vulkanGamesList.AccessibleName = "Existing Vulkan consumers";
+        AddSectionRow(externalGames, vulkanGamesList);
         FlowLayoutPanel consumerCommands = CreateCommandBar();
-        consumerCommands.Controls.Add(CreateActionButton("Adopt selected game...", OnAdoptSelectedGameAsync));
-        consumerCommands.Controls.Add(CreateActionButton("Forget selected record", OnForgetSelectedRecordAsync));
-        AddSectionRow(vulkan, consumerCommands);
+        consumerCommands.Controls.Add(CreateActionButton("Manage game...", OnAdoptSelectedGameAsync,
+            isAvailable: () => vulkanGamesList.SelectedItem is VulkanGameEntry { IsManaged: false }));
+        vulkanGamesList.SelectedIndexChanged += (_, _) => UpdateActionAvailability();
+        AddSectionRow(externalGames, consumerCommands);
 
         TableLayoutPanel storage = CreateSection(sections, "Central storage");
         AddSectionRow(storage, storageLabel);
@@ -477,7 +584,7 @@ public sealed class MainForm : Form
         AddSectionRow(application, applicationCommands);
     }
 
-    private TableLayoutPanel CreatePage(string tabName, string title, string description)
+    private TableLayoutPanel CreatePage(string tabName)
     {
         var page = new TabPage(tabName) { Padding = new Padding(20) };
         tabs.TabPages.Add(page);
@@ -485,37 +592,14 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 4,
+            RowCount = 3,
             Margin = Padding.Empty
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         page.Controls.Add(layout);
-        var heading = new TableLayoutPanel
-        {
-            AutoSize = true,
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            Margin = new Padding(0, 0, 0, 20)
-        };
-        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        heading.Controls.Add(new Label
-        {
-            Text = title,
-            Font = DarkTheme.HeadingFont,
-            AutoSize = true,
-            Margin = Padding.Empty
-        });
-        heading.Controls.Add(new Label
-        {
-            Text = description,
-            AutoSize = true,
-            Margin = new Padding(0, 7, 0, 0)
-        });
-        layout.Controls.Add(heading, 0, 0);
         return layout;
     }
 
@@ -579,7 +663,7 @@ public sealed class MainForm : Form
 
         using var second = new OpenFileDialog
         {
-            Title = "Select the full-add-on official ReShade installer",
+            Title = $"Select the official {DisplayNames.For(RuntimeBuild.FullAddon)} ReShade installer",
             Filter = "ReShade installer|*.exe"
         };
         if (second.ShowDialog(this) == DialogResult.OK)
@@ -590,7 +674,10 @@ public sealed class MainForm : Form
         }
     }
 
-    private async Task<bool> RunOperationAsync(string description, Func<CancellationToken, Task> action)
+    private async Task<bool> RunOperationAsync(
+        string description,
+        Func<CancellationToken, Task> action,
+        bool reportCompletion = true)
     {
         if (operationCancellation != null)
         {
@@ -605,12 +692,15 @@ public sealed class MainForm : Form
         try
         {
             await action(operationCancellation.Token);
-            WriteLog("Finished: " + description);
+            if (reportCompletion)
+            {
+                WriteLog("Finished: " + description);
+            }
             return true;
         }
         catch (OperationCanceledException)
         {
-            WriteLog("Cancelled. Uncommitted changes were rolled back.");
+            WriteLog("Cancelled. Completed work was kept; unfinished changes were rolled back.");
             return false;
         }
         catch (Exception error)
@@ -657,8 +747,8 @@ public sealed class MainForm : Form
         WriteLog("Failed: " + error);
         MessageBox.Show(
             this,
-            error.Message + "\n\nSee Activity for details. Backups are retained for restore.",
-            "Operation failed",
+            UserErrors.Describe(error) + "\n\nTechnical details are in Activity.",
+            error is InvalidOperationException or ArgumentException ? "Action unavailable" : "Operation failed",
             MessageBoxButtons.OK,
             MessageBoxIcon.Error);
     }
@@ -666,22 +756,21 @@ public sealed class MainForm : Form
     private void RefreshView()
     {
         ManagerState? state = manager.State;
-        string runtimeVersions = state == null ?
-            "One runtime location. Separate game profiles." :
-            string.Join(
+        Dictionary<RuntimeBuild, string> runtimeVersions = Enum.GetValues<RuntimeBuild>()
+            .ToDictionary(build => build, build => GetInstalledRuntimeVersion(state, build));
+        versionsLabel.Text = string.Join(
             "   •   ",
-            Enum.GetValues<RuntimeBuild>()
-            .Select(item => item +
-                ": " + state.RuntimeVersions.GetValueOrDefault(
-                    item,
-                    "not downloaded")));
-        versionsLabel.Text = $"App: {AppVersion.Text}   •   {runtimeVersions}";
+            runtimeVersions.Select(item => $"{DisplayNames.For(item.Key)}: {item.Value}"));
+        runtimeStatusLabel.Text = runtimeVersions.Values.All(version => version == "Not installed")
+            ? "ReShade: Not installed"
+            : $"ReShade: {runtimeVersions[RuntimeBuild.Standard]}   |   " +
+                $"Add-on support: {runtimeVersions[RuntimeBuild.FullAddon]}";
         gamesGrid.DataSource = state?.Games.Select(game => new
         {
             game.Id,
-            game.Name,
-            API = game.Api,
-            Build = game.Build,
+            Name = string.IsNullOrWhiteSpace(game.Executable) ? game.Name : Path.GetFileName(game.Executable),
+            API = DisplayNames.For(game.Api),
+            Build = DisplayNames.For(game.Build),
             Architecture = game.Executable == null ?
             "Select executable" :
             game.Architecture.ToString(),
@@ -693,15 +782,70 @@ public sealed class MainForm : Form
             idColumn.Visible = false;
         }
 
-        storageLabel.Text = state == null ?
-            "Choose a central folder to get started." :
-            "Central storage: " + state.Paths.Root + "\nShaders: " + state.Paths.Shaders +
-            "\nProfiles: " + state.Paths.Profiles;
+        storageLabel.Text = state?.Paths.Root ?? "Not configured";
         if (state != null)
         {
             vulkanBuildSelector.SelectedItem = state.VulkanBuild;
-            externalVulkanAppsList.Items.Clear();
-            externalVulkanAppsList.Items.AddRange(state.ExternalVulkanApps.Cast<object>().ToArray());
+        }
+
+        RefreshVulkanStatus();
+        UpdateActionAvailability();
+    }
+
+    private void RefreshVulkanStatus()
+    {
+        VulkanInspection inspection = manager.InspectVulkan();
+        bool pendingBuild = manager.State != null && vulkanBuildSelector.SelectedItem is RuntimeBuild selectedBuild &&
+            selectedBuild != manager.State.VulkanBuild;
+        bool applied = inspection.IsApplied && !pendingBuild;
+        vulkanStatusLabel.Text = pendingBuild ? "Selected build is not applied. Choose Apply / repair." :
+            inspection.Message;
+        vulkanStatusLabel.ForeColor = applied || SystemInformation.HighContrast
+            ? DarkTheme.Muted : Color.FromArgb(242, 199, 91);
+        vulkanWarningIcon.Visible = !applied;
+        vulkanGamesList.SetEntries(inspection.Consumers.Select(executable => new VulkanGameEntry(executable,
+            manager.State?.Games.Any(game => game.Api == RenderApi.Vulkan && game.Executable != null &&
+                FileTransaction.Same(game.Executable, executable)) == true)));
+
+        vulkanGamesList.Parent!.Visible = vulkanGamesList.Items.Count > 0;
+        if (inspection.Error != null && inspection.Error != lastVulkanInspectionError)
+        {
+            WriteLog("Vulkan registration check: " + inspection.Error);
+        }
+        lastVulkanInspectionError = inspection.Error;
+        UpdateActionAvailability();
+    }
+
+    private static string GetInstalledRuntimeVersion(ManagerState? state, RuntimeBuild build)
+    {
+        if (state == null)
+        {
+            return "Not installed";
+        }
+
+        string directory = state.Paths.Binaries(build);
+        string[] binaries = [Path.Combine(directory, "ReShade32.dll"), Path.Combine(directory, "ReShade64.dll")];
+        if (!binaries.Any(File.Exists))
+        {
+            return "Not installed";
+        }
+
+        if (!binaries.All(File.Exists))
+        {
+            return "Incomplete";
+        }
+
+        try
+        {
+            string[] versions = binaries.Select(path =>
+                FileVersionInfo.GetVersionInfo(path).ProductVersion?.Split('+')[0] ?? "Unknown version")
+                .Distinct()
+                .ToArray();
+            return versions.Length == 1 ? versions[0] : "Version mismatch";
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return "Unavailable";
         }
     }
 
@@ -714,7 +858,8 @@ public sealed class MainForm : Form
 
     private async Task OnInstallToGameAsync()
     {
-        using var dialog = new GameDialog(manager.State!.VulkanBuild);
+        ManagerState state = RequireState();
+        using var dialog = new GameDialog(state.VulkanBuild, managedGames: state.Games);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             await RunOperationAsync(
@@ -748,6 +893,26 @@ public sealed class MainForm : Form
     private Task OnOpenProfileAsync()
     {
         OpenFolder(GetSelectedGame().Directory);
+        return Task.CompletedTask;
+    }
+
+    private Task OnOpenGameFolderAsync()
+    {
+        GameProfile game = GetSelectedGame();
+        if (string.IsNullOrWhiteSpace(game.Executable))
+        {
+            throw new InvalidOperationException("This profile has no game executable. Select the game and choose " +
+                "Repair / edit to select its executable before opening the game folder.");
+        }
+
+        string directory = Path.GetDirectoryName(game.Executable)!;
+        if (!Directory.Exists(directory))
+        {
+            throw new DirectoryNotFoundException($"The game folder no longer exists: {directory}. " +
+                "Choose Games > Repair / edit and select the game's current executable.");
+        }
+
+        OpenFolder(directory);
         return Task.CompletedTask;
     }
 
@@ -788,16 +953,22 @@ public sealed class MainForm : Form
 
     private async Task OnAdoptSelectedGameAsync()
     {
-        string executablePath = externalVulkanAppsList.SelectedItem as string ??
-            throw new InvalidOperationException("Select an existing Vulkan consumer.");
+        if (vulkanGamesList.SelectedItem is not VulkanGameEntry { IsManaged: false } entry)
+        {
+            throw new InvalidOperationException("Open Runtime & storage > Vulkan games and select " +
+                "an unmanaged game before choosing Manage game. Edit managed games from the Games tab.");
+        }
+
+        string executablePath = entry.Executable;
+        ManagerState state = RequireState();
+        var game = new GameProfile
+        {
+            Name = Path.GetFileName(executablePath),
+            Executable = executablePath,
+            Api = RenderApi.Vulkan
+        };
         using var dialog = new GameDialog(
-            manager.State!.VulkanBuild,
-            new GameProfile
-            {
-                Name = Path.GetFileNameWithoutExtension(executablePath),
-                Executable = executablePath,
-                Api = RenderApi.Vulkan
-            });
+            state.VulkanBuild, game, state.Games);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             await RunOperationAsync(
@@ -806,28 +977,11 @@ public sealed class MainForm : Form
         }
     }
 
-    private async Task OnForgetSelectedRecordAsync()
-    {
-        string executablePath = externalVulkanAppsList.SelectedItem as string ??
-            throw new InvalidOperationException("Select an existing Vulkan consumer.");
-        if (MessageBox.Show(
-            this,
-            "Forget this consumer record? Its game configuration is retained. The shared " +
-            "layer is removed if no recorded consumers remain.",
-            "Forget record",
-            MessageBoxButtons.OKCancel) == DialogResult.OK)
-        {
-            await RunOperationAsync(
-                "Removing consumer record",
-                cancellationToken => manager.ForgetExternalVulkanAppAsync(executablePath, cancellationToken));
-        }
-    }
-
     private async Task OnRelocateCentralFolderAsync()
     {
         using var dialog = new FolderBrowserDialog
         {
-            Description = "Choose a separate, empty destination. Original data is retained.",
+            Description = "New central folder",
             UseDescriptionForTitle = true
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
@@ -840,7 +994,7 @@ public sealed class MainForm : Form
 
     private Task OnOpenCentralFolderAsync()
     {
-        OpenFolder(manager.State!.Paths.Root);
+        OpenFolder(RequireState().Paths.Root);
         return Task.CompletedTask;
     }
 

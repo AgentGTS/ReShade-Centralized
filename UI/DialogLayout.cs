@@ -20,28 +20,29 @@ internal static class DialogLayout
         table.ColumnStyles.Add(new(SizeType.Absolute, 145));
         table.ColumnStyles.Add(new(SizeType.Percent, 100));
         form.Controls.Add(table);
-        table.RowCount = 1;
-        table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var heading = new Label
-        {
-            Text = form.Text,
-            Font = DarkTheme.HeadingFont,
-            AutoSize = true,
-            Margin = new Padding(0, 0, 0, 24)
-        };
-        table.Controls.Add(heading, 0, 0);
-        table.SetColumnSpan(heading, 2);
         return table;
     }
 
-    public static void Row(TableLayoutPanel table, string label, Control control)
+    public static Label? Row(TableLayoutPanel table, string label, Control control)
     {
         int row = table.RowCount++;
         table.RowStyles.Add(new(SizeType.AutoSize));
-        table.Controls.Add(new Label { Text = label, AutoSize = true, Margin = new Padding(0, 9, 8, 10) }, 0, row);
+        Label? fieldLabel = null;
+        if (label.Length > 0)
+        {
+            fieldLabel = new Label { Text = label, AutoSize = true, Margin = new Padding(0, 9, 8, 10) };
+            table.Controls.Add(fieldLabel, 0, row);
+        }
+
         control.Dock = DockStyle.Fill;
         control.Margin = new Padding(0, 4, 0, 9);
-        table.Controls.Add(control, 1, row);
+        table.Controls.Add(control, fieldLabel == null ? 0 : 1, row);
+        if (fieldLabel == null)
+        {
+            table.SetColumnSpan(control, 2);
+        }
+
+        return fieldLabel;
     }
 
     public static Control Browse(TextBox box, bool file, string filter = "Executables|*.exe")
@@ -97,7 +98,7 @@ internal static class DialogLayout
         return panel;
     }
 
-    public static void Buttons(TableLayoutPanel table, Form form, string accept = "Save")
+    public static Button Buttons(TableLayoutPanel table, Form form, string accept = "Save")
     {
         var buttons = new FlowLayoutPanel
         {
@@ -122,5 +123,6 @@ internal static class DialogLayout
         form.AcceptButton = ok;
         form.CancelButton = cancel;
         DarkTheme.Apply(form);
+        return ok;
     }
 }

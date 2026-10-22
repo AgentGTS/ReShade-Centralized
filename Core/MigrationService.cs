@@ -111,12 +111,14 @@ public static class MigrationService
                 target.StartsWith(pair.First.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase) ||
                 pair.First.StartsWith(target.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)))
             {
-                throw new IOException("Relocation requires a separate destination tree.");
+                throw new IOException("The new central folder overlaps the current one. Open Runtime & storage > " +
+                    "Relocate central folder and choose an empty folder outside the current central folder.");
             }
 
             if (Directory.Exists(target) && ShaderService.EnumerateFiles(target).Any())
             {
-                throw new IOException("Relocation destination is not empty: " + target);
+                throw new IOException($"The relocation destination is not empty: {target}. " +
+                    "Open Runtime & storage > Relocate central folder and choose a different, empty folder.");
             }
 
             FileTransaction.CheckParents(Path.Combine(target, "check"));

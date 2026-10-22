@@ -13,8 +13,8 @@ internal sealed class SetupDialog : Form
 
     public SetupDialog(string applicationDirectory)
     {
-        Text = "Set up ReShade Centralized";
-        ClientSize = new(720, 330);
+        Text = "Setup";
+        ClientSize = new(720, 200);
         string old = Path.Combine(applicationDirectory, "ReShadeCentralized.ini");
         if (File.Exists(old))
         {
@@ -23,16 +23,7 @@ internal sealed class SetupDialog : Form
 
         TableLayoutPanel table = DialogLayout.Table(this);
         DialogLayout.Row(table, "Central folder", DialogLayout.Browse(root, false));
-        DialogLayout.Row(table, "Legacy settings", DialogLayout.Browse(legacy, true, "Legacy settings|*.ini"));
-        DialogLayout.Row(
-            table,
-            "",
-            new Label
-            {
-                Text = "Legacy import preserves your existing paths and profiles.\n" +
-                    "Leave it blank for a new installation.",
-                AutoSize = true
-            });
-        DialogLayout.Buttons(table, this, "Create / import");
+        DialogLayout.Row(table, "Import (optional)", DialogLayout.Browse(legacy, true, "Legacy settings|*.ini"));
+        DialogLayout.Buttons(table, this, "Continue");
     }
 }

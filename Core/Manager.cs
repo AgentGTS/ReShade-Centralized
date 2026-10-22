@@ -29,6 +29,8 @@ public sealed class Manager : IDisposable
         State = Store.Load();
     }
 
+    public VulkanInspection InspectVulkan() => vulkan.Inspect(State);
+
     private async Task RunSerializedAsync(Func<Task> operation, CancellationToken cancellationToken)
     {
         await operationGate.WaitAsync(cancellationToken);
@@ -50,7 +52,8 @@ public sealed class Manager : IDisposable
         await RunSerializedAsync(async () =>
         {
             ManagerState updatedState = State?.Clone() ??
-                throw new InvalidOperationException("Choose a central folder first.");
+                throw new InvalidOperationException("Complete Setup and choose a central folder before " +
+                    "using this action. Restart ReShade Centralized to open Setup.");
             using var transaction = new FileTransaction(Store.Backups, description, registry);
             await action(updatedState, transaction);
             cancellationToken.ThrowIfCancellationRequested();
@@ -66,7 +69,8 @@ public sealed class Manager : IDisposable
         {
             if (State != null)
             {
-                throw new InvalidOperationException("Already initialized.");
+                throw new InvalidOperationException("A central folder is already configured. To move it, " +
+                    "use Runtime & storage > Relocate central folder.");
             }
 
             using var transaction = new FileTransaction(Store.Backups, "Initialize / import legacy settings", registry);
@@ -91,7 +95,16 @@ public sealed class Manager : IDisposable
     private string CreateStagingDirectory()
     {
         string path = Path.Combine(Store.Staging, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(path);
+        try
+        {
+            Directory.CreateDirectory(path);
+        }
+        catch (IOException error)
+        {
+            throw new IOException($"Cannot prepare the download folder {Store.Staging}. " +
+                "Make sure this path is a writable folder rather than a file, then retry the download.", error);
+        }
+
         return path;
     }
 
@@ -176,7 +189,9 @@ public sealed class Manager : IDisposable
 
     public Task InstallAsync(GameProfile request, CancellationToken cancellationToken)
     {
-        return ChangeStateAsync("Install / repair " + request.Name, (updatedState, transaction) =>
+        string displayName = string.IsNullOrWhiteSpace(request.Executable) ? request.Name :
+            Path.GetFileName(request.Executable);
+        return ChangeStateAsync("Install / repair " + displayName, (updatedState, transaction) =>
         {
             ManagerState previous = updatedState.Clone();
             GameProfile? existing = updatedState.Games.SingleOrDefault(gameItem => gameItem.Id == request.Id);
@@ -193,21 +208,23 @@ public sealed class Manager : IDisposable
                 game.Directory = FileTransaction.Contained(updatedState.Paths.Profiles, game.Id);
             }
 
-            if (string.IsNullOrWhiteSpace(game.Name))
+            if (string.IsNullOrWhiteSpace(game.Executable))
             {
-                throw new ArgumentException("Game name is required.");
+                game.Executable = null;
             }
 
             if (game.Executable != null)
             {
                 game.Executable = Path.GetFullPath(game.Executable);
+                game.Name = Path.GetFileName(game.Executable);
                 if (updatedState.Games.Any(gameItem => gameItem.Id != game.Id && gameItem.Executable != null &&
                     FileTransaction.Same(
                         Path.GetDirectoryName(gameItem.Executable)!,
                         Path.GetDirectoryName(game.Executable)!)))
                 {
                     throw new IOException(
-                        "Another managed profile already uses this executable directory. Repair that profile instead.");
+                        "Another managed profile already uses this executable directory. Open Games, select " +
+                        "that profile, and choose Repair / edit instead of installing a second profile.");
                 }
             }
 
@@ -258,31 +275,9 @@ public sealed class Manager : IDisposable
         }, cancellationToken);
     }
 
-    public Task ForgetExternalVulkanAppAsync(string executable, CancellationToken cancellationToken)
-    {
-        return ChangeStateAsync("Remove external Vulkan consumer record", (updatedState, transaction) =>
-        {
-            updatedState.ExternalVulkanApps.RemoveAll(value => value.Equals(
-                    executable,
-                    StringComparison.OrdinalIgnoreCase));
-            if (!updatedState.IgnoredVulkanApps.Contains(executable, StringComparer.OrdinalIgnoreCase))
-            {
-                updatedState.IgnoredVulkanApps.Add(executable);
-            }
-
-            vulkan.RemoveIfUnused(updatedState, transaction);
-            if (updatedState.VulkanManaged)
-            {
-                vulkan.WriteApps(updatedState, transaction);
-            }
-
-            return Task.CompletedTask;
-        }, cancellationToken);
-    }
-
     public Task SetVulkanBuildAsync(RuntimeBuild build, CancellationToken cancellationToken)
     {
-        return ChangeStateAsync("Switch global Vulkan build to " + build, (updatedState, transaction) =>
+        return ChangeStateAsync("Switch global Vulkan build to " + DisplayNames.For(build), (updatedState, transaction) =>
         {
             updatedState.VulkanBuild = build;
             foreach (GameProfile? game in updatedState.Games.Where(game => game.Api == RenderApi.Vulkan))
@@ -304,7 +299,8 @@ public sealed class Manager : IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 if (game.Executable == null)
                 {
-                    progress?.Report("Select an executable to relink legacy profile: " + game.Name);
+                    progress?.Report($"Skipped {game.Name}: open Games > Repair / edit and select its Executable, " +
+                        "then retry Repair all.");
                     continue;
                 }
 
@@ -330,7 +326,8 @@ public sealed class Manager : IDisposable
             if (unknown.Length > 0)
             {
                 throw new InvalidOperationException(
-                    "Select runtime executables for these legacy profiles before relocation: " +
+                    "Open Games > Repair / edit and select the Executable for these legacy profiles " +
+                    "before relocating: " +
                     string.Join(", ", unknown));
             }
 
@@ -370,25 +367,71 @@ public sealed class Manager : IDisposable
         CancellationToken cancellationToken,
         bool rememberSelection = true)
     {
-        var messages = new List<string>();
+        PackageUpdateReport report = await UpdatePackagesWithReportAsync(
+            selected, catalog, progress, cancellationToken, rememberSelection);
+        return report.Messages;
+    }
+
+    public async Task<PackageUpdateReport> UpdatePackagesWithReportAsync(
+        IReadOnlyList<ShaderPackage> selected,
+        IReadOnlyList<ShaderPackage> catalog,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken,
+        bool rememberSelection = true)
+    {
+        var report = new PackageUpdateReport();
+        void Report(string message)
+        {
+            report.Messages.Add(message);
+            progress?.Report(message);
+        }
+
         await RunSerializedAsync(async () =>
         {
             if (State == null)
             {
-                throw new InvalidOperationException("Initialize first.");
+                throw new InvalidOperationException("Complete Setup and choose a central folder before " +
+                    "installing shader packages. Restart ReShade Centralized to open Setup.");
             }
 
-            IReadOnlyList<ShaderPackage> packages = ShaderService.WithDependencies(selected, catalog);
+            IReadOnlyList<ShaderPackage> packages = ShaderService.WithDependencies(
+                selected, catalog, (package, message) =>
+                {
+                    report.FailedCount++;
+                    Report($"Skipped {package.Name}: {message}");
+                });
             foreach (ShaderPackage package in packages)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                string message = await UpdatePackageAsync(
+                ShaderPackage[] missingDependencies = ShaderService.Dependencies(package, packages)
+                    .Where(dependency => !IsPackageAvailable(dependency.Id)).ToArray();
+                if (missingDependencies.Length > 0)
+                {
+                    report.FailedCount++;
+                    Report($"Skipped {package.Name}: required packages are unavailable: " +
+                        string.Join(", ", missingDependencies.Select(dependency => dependency.Name)) +
+                        ". In Shader packages, select those packages and retry Install / update selected. " +
+                        "Existing files were retained.");
+                    continue;
+                }
+
+                (bool installed, string message) = await UpdatePackageAsync(
                     package,
                     packages,
                     rememberSelection,
                     progress,
+                    report.Messages,
                     cancellationToken);
-                messages.Add(message);
+                if (installed)
+                {
+                    report.InstalledCount++;
+                }
+                else
+                {
+                    report.FailedCount++;
+                }
+
+                Report(message);
             }
 
             using var choices = new FileTransaction(Store.Backups, "Save shader package selection", registry);
@@ -396,29 +439,55 @@ public sealed class Manager : IDisposable
             ManagerState finalState = State.Clone();
             if (rememberSelection)
             {
-                finalState.SelectedPackages = packages.Select(package => package.Id).ToList();
+                finalState.SelectedPackages = selected.Concat(catalog.Where(package => package.Required))
+                    .Concat(packages).Select(package => package.Id).Distinct().ToList();
             }
 
             Store.Save(finalState, choices);
             choices.Commit();
             State = finalState;
-            messages.AddRange(ShaderService.DuplicateEffects(State)
-                .Select(value => "Duplicate effect filename: " +
-                    value));
+            foreach (string duplicate in ShaderService.DuplicateEffects(State))
+            {
+                Report("Duplicate effect filename: " + duplicate);
+            }
         }, cancellationToken);
-        return messages;
+        return report;
     }
 
-    private async Task<string> UpdatePackageAsync(
+    private bool IsPackageAvailable(string id)
+    {
+        InstalledPackage? installed = State!.Packages.SingleOrDefault(package => package.Id == id);
+        if (installed == null || installed.Files.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (string file in installed.Files.Keys)
+        {
+            string[] parts = file.Split('/', 2);
+            string root = parts[0] == "shaders" ? State.Paths.Shaders : State.Paths.Textures;
+            string directory = ShaderService.PackageDirectory(root, id);
+            if (parts.Length != 2 || !File.Exists(FileTransaction.Contained(directory, parts[1])))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private async Task<(bool Installed, string Message)> UpdatePackageAsync(
         ShaderPackage package,
         IReadOnlyList<ShaderPackage> selection,
         bool rememberSelection,
         IProgress<string>? progress,
+        List<string> messages,
         CancellationToken cancellationToken)
     {
-        string staging = CreateStagingDirectory();
+        string? staging = null;
         try
         {
+            staging = CreateStagingDirectory();
             ManagerState previousState = State!.Clone();
             ManagerState updatedState = State.Clone();
             InstalledPackage? installed = updatedState.Packages.SingleOrDefault(item => item.Id == package.Id);
@@ -448,16 +517,36 @@ public sealed class Manager : IDisposable
             Store.Save(updatedState, transaction);
             transaction.Commit();
             State = updatedState;
-            return "Updated: " + package.Name;
+            return (true, "Installed: " + package.Name);
         }
         catch (Exception error) when (error is IOException or HttpRequestException or InvalidDataException
-        or UnauthorizedAccessException)
+        or UnauthorizedAccessException || (error is OperationCanceledException &&
+            !cancellationToken.IsCancellationRequested))
         {
-            return $"Preserved previous files / skipped {package.Name}: {error.Message}";
+            string explanation = error is InvalidDataException ?
+                "The package archive is invalid or unsupported. Open Shader packages > Refresh catalog, " +
+                "then retry. Details: " + error.Message : UserErrors.Describe(error);
+            return (false, $"Failed {package.Name}: {explanation}\n" +
+                "Existing files were retained. Retry this package in Shader packages > Install / update selected. " +
+                $"Repository: {package.Repository}");
         }
         finally
         {
-            DeleteStagingDirectory(staging);
+            if (staging != null)
+            {
+                try
+                {
+                    DeleteStagingDirectory(staging);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    string warning = $"Could not remove temporary files for {package.Name}: {staging}. " +
+                        "After this operation finishes, close programs using this folder and remove it " +
+                        "to reclaim disk space. " + error.Message;
+                    messages.Add(warning);
+                    progress?.Report(warning);
+                }
+            }
         }
     }
 

@@ -28,7 +28,8 @@ public sealed class RuntimeService(Downloads downloads)
         if (result.Count != 2)
         {
             throw new InvalidDataException(
-                "The official download page did not provide distinct standard and full-add-on installers.");
+                "The official download page did not provide separate Standard and " +
+                $"{DisplayNames.For(RuntimeBuild.FullAddon)} installers.");
         }
 
         return result;
@@ -54,7 +55,8 @@ public sealed class RuntimeService(Downloads downloads)
                 if (signed != (expectedBuild == RuntimeBuild.Standard))
                 {
                     throw new InvalidDataException(
-                        "The installer does not match the selected standard/full-add-on build.");
+                        "The installer does not match the selected Standard or " +
+                        $"{DisplayNames.For(RuntimeBuild.FullAddon)} build.");
                 }
             }
 

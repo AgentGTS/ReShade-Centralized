@@ -22,6 +22,100 @@ public sealed class DeploymentService
             link.Target);
     }
 
+    public static ExistingInstallationNotice? InspectExistingInstallation(
+        string executable,
+        RenderApi api,
+        IReadOnlyList<OwnedLink> managedLinks,
+        string? managedConfigPath = null)
+    {
+        if (!File.Exists(executable) || !Path.GetExtension(executable).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        string directory = Path.GetDirectoryName(Path.GetFullPath(executable))!;
+        string? proxy = Proxy(api);
+        var unmanaged = new List<string>();
+        var changed = new List<string>();
+        var otherApis = new List<string>();
+        var unrelated = new List<string>();
+        foreach (string name in ProxyNames.Append("ReShade.ini"))
+        {
+            string path = Path.Combine(directory, name);
+            if (!FileTransaction.Exists(path))
+            {
+                continue;
+            }
+
+            OwnedLink? owned = managedLinks.FirstOrDefault(link => FileTransaction.Same(link.Path, path));
+            if (owned != null)
+            {
+                if (!IsOwnedLink(owned))
+                {
+                    changed.Add(name);
+                }
+
+                continue;
+            }
+
+            if (name == "ReShade.ini")
+            {
+                if (managedConfigPath == null || !IsOwnedLink(new(path, managedConfigPath)))
+                {
+                    unmanaged.Add(name);
+                }
+            }
+            else if (PortableExecutable.IsReShade(path))
+            {
+                unmanaged.Add(name);
+                if (name != proxy)
+                {
+                    otherApis.Add(name);
+                }
+            }
+            else if (name == proxy)
+            {
+                unrelated.Add(name);
+            }
+        }
+
+        string message;
+        bool blocked = true;
+        if (changed.Count > 0)
+        {
+            message = $"Managed files were changed outside this app ({string.Join(", ", changed)}). " +
+                "Restore the original managed links or resolve these files before installing.";
+        }
+        else if (otherApis.Count > 0)
+        {
+            message = $"Unmanaged ReShade uses another proxy ({string.Join(", ", otherApis)}). " +
+                "Select the matching Graphics API or uninstall that ReShade installation before continuing.";
+        }
+        else if (unrelated.Count > 0)
+        {
+            message = $"An unrecognized DLL occupies the hook location ({string.Join(", ", unrelated)}). " +
+                "Resolve that DLL before installing; this app will preserve it.";
+        }
+        else if (unmanaged.Count > 0)
+        {
+            message = $"Unmanaged ReShade detected ({string.Join(", ", unmanaged)}). " +
+                "Install will back up and replace these files with managed links.";
+            blocked = false;
+        }
+        else
+        {
+            return null;
+        }
+
+        if (unmanaged.Count > 0 && Directory.Exists(Path.Combine(directory, "reshade-shaders")))
+        {
+            message += "\nLocal reshade-shaders will remain. If effects appear twice, back up custom shaders " +
+                "before deleting that folder or removing its effect search path in ReShade settings.";
+        }
+
+        return new(message, blocked);
+    }
+
     private static void Link(
         GameProfile game,
         string path,
@@ -58,12 +152,14 @@ public sealed class DeploymentService
 
         if (game.Executable == null || !File.Exists(game.Executable))
         {
-            throw new FileNotFoundException("Select the actual game executable before linking this profile.");
+            throw new FileNotFoundException("The game executable is missing or was not selected. " +
+                "Open Games > Install game or Repair / edit and browse to the game's actual .exe file.");
         }
 
         if (!Path.GetExtension(game.Executable).Equals(".exe", StringComparison.OrdinalIgnoreCase))
         {
-            throw new IOException("Select a Windows .exe file.");
+            throw new IOException("The selected file is not a Windows executable. In Games > Install game " +
+                "or Repair / edit, use Executable to select the game's .exe file.");
         }
 
         game.Architecture = PortableExecutable.Architecture(game.Executable);
@@ -80,7 +176,9 @@ public sealed class DeploymentService
         string dll = Path.Combine(state.Paths.Binaries(game.Build), stem + ".dll");
         if (!PortableExecutable.IsReShade(dll) || PortableExecutable.Architecture(dll) != game.Architecture)
         {
-            throw new IOException("Update the central ReShade runtime before installing this game.");
+            throw new IOException($"The {DisplayNames.For(game.Build)} runtime for {game.Architecture} " +
+                "is missing or invalid. " +
+                "Open Runtime & storage > Update ReShade, then retry Games > Install game or Repair / edit.");
         }
 
         string? proxy = Proxy(game.Api);

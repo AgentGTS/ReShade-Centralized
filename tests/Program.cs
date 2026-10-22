@@ -120,6 +120,9 @@ internal static partial class TestSuite
             "Unsupported rendering APIs are rejected before deployment changes files",
             DeploymentRejectsUnsupportedApisBeforeChangingFilesAsync);
         await RunTestAsync(
+            "Installation notices distinguish unmanaged configuration, DLL conflicts, and externally changed links",
+            InstallationNoticeDistinguishesConfigAndConflictsAsync);
+        await RunTestAsync(
             "Offline catalog falls back, extras deduplicate, BFBFX resolves Zenteon",
             OfflineCatalogDeduplicatesPackagesAndResolvesDependenciesAsync);
         await RunTestAsync(
@@ -128,6 +131,24 @@ internal static partial class TestSuite
         await RunTestAsync(
             "Package updates remove only obsolete owned files; cancellation rolls back",
             PackageUpdateRemovesOwnedFilesAndRollsBackCancellationAsync);
+        await RunTestAsync(
+            "Failed downloads, timeouts, and corrupt archives do not block healthy shader packages",
+            PackageFailuresDoNotBlockHealthyDownloadsAsync);
+        await RunTestAsync(
+            "Failed package updates preserve previous files and local edits while other packages install",
+            FailedPackageUpdatesPreserveExistingFilesAndLocalEditsAsync);
+        await RunTestAsync(
+            "Missing and failed dependencies skip only affected packages; retained dependencies remain usable",
+            FailedDependenciesSkipOnlyAffectedPackagesAsync);
+        await RunTestAsync(
+            "Canceling a shader batch keeps completed installs and rolls back the active package",
+            PackageCancellationKeepsCompletedInstallsAsync);
+        await RunTestAsync(
+            "Cleanup locks and staging failures are isolated from other package installations",
+            PackageCleanupAndStagingFailuresAreIsolatedAsync);
+        await RunTestAsync(
+            "Out-of-order actions identify the missing setup step and the control used to fix it",
+            OutOfOrderActionsExplainRecoveryAsync);
         await RunTestAsync(
             "Legacy import retains custom paths, profiles, presets and marks executable unknown",
             LegacyImportPreservesProfilesAndCustomPathsAsync);
@@ -284,6 +305,18 @@ internal static partial class TestSuite
 
     private static async Task RunIntegrationTestsAsync()
     {
+        await RunTestAsync(
+            "Vulkan inspection checks both views, runtime identity and external consumers without writing",
+            VulkanInspectionVerifiesRegistrationWithoutChangesAsync);
+        await RunTestAsync(
+            "Vulkan inventory refreshes after install, restart, build switch, removal and registration changes",
+            VulkanInventoryFollowsGameAndRegistrationChangesAsync);
+        await RunTestAsync(
+            "Executable filenames supply game names; changing executables preserves profile IDs and presets",
+            ExecutableNamesChangeWithoutMovingProfilesAsync);
+        await RunTestAsync(
+            "Unmanaged ReShade detection matches replacement backups, ownership checks, and shader preservation",
+            UnmanagedInstallationDetectionPreservesBackupsAsync);
         await RunTestAsync(
             "Build identity and Vulkan manifest traversal validation",
             BuildIdentityAndVulkanManifestTraversalValidationAsync);

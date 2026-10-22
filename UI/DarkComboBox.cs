@@ -9,6 +9,13 @@ internal sealed class DarkComboBox : ComboBox
         IntegralHeight = false;
         ItemHeight = 26;
         DropDownHeight = 240;
+        FormattingEnabled = true;
+        Format += (_, e) => e.Value = e.ListItem switch
+        {
+            RuntimeBuild build => DisplayNames.For(build),
+            RenderApi api => DisplayNames.For(api),
+            _ => e.Value
+        };
     }
 
     protected override void OnDrawItem(DrawItemEventArgs e)

@@ -121,27 +121,52 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
 
     public static IReadOnlyList<ShaderPackage> WithDependencies(
         IEnumerable<ShaderPackage> selected,
-        IReadOnlyList<ShaderPackage> catalog)
+        IReadOnlyList<ShaderPackage> catalog,
+        Action<ShaderPackage, string>? dependencyUnavailable = null)
     {
         var result = selected.Concat(catalog.Where(package => package.Required)).DistinctBy(package => package.Id)
             .ToList();
         // The upstream catalog describes this dependency but has no structured dependency field.
-        if (result.Any(package => CanonicalRepository(package.Repository).EndsWith("/yplebedev/bfbfx")))
+        ShaderPackage? dependent = result.SingleOrDefault(package =>
+            CanonicalRepository(package.Repository).EndsWith("/yplebedev/bfbfx"));
+        if (dependent != null)
         {
-            ShaderPackage framework = catalog.SingleOrDefault(package =>
-                CanonicalRepository(package.Repository).EndsWith("/zenteon/zenteonfx")) ??
-                throw new InvalidDataException("BFBFX requires ZenteonFX, which is missing from the catalog.");
-            if (!result.Any(package => package.Id == framework.Id))
+            ShaderPackage? framework = catalog.SingleOrDefault(package =>
+                CanonicalRepository(package.Repository).EndsWith("/zenteon/zenteonfx"));
+            if (framework == null)
+            {
+                const string message = "BFBFX requires ZenteonFX, which is missing from the catalog. " +
+                    "Open Shader packages > Refresh catalog, then retry Install / update selected.";
+                if (dependencyUnavailable == null)
+                {
+                    throw new InvalidDataException(message);
+                }
+
+                result.Remove(dependent);
+                dependencyUnavailable(dependent, message);
+            }
+            else if (!result.Any(package => package.Id == framework.Id))
             {
                 result.Add(framework);
             }
         }
 
         return result.OrderByDescending(package => package.Required)
+            .ThenBy(package => package.Id == dependent?.Id)
             .ThenBy(
             package => package.Id,
             StringComparer.Ordinal)
             .ToList();
+    }
+
+    public static IEnumerable<ShaderPackage> Dependencies(
+        ShaderPackage package,
+        IReadOnlyList<ShaderPackage> selection)
+    {
+        bool needsFramework = CanonicalRepository(package.Repository).EndsWith("/yplebedev/bfbfx");
+        return selection.Where(candidate => candidate.Id != package.Id &&
+            ((!package.Required && candidate.Required) ||
+            (needsFramework && CanonicalRepository(candidate.Repository).EndsWith("/zenteon/zenteonfx"))));
     }
 
     public static string PackageDirectory(string root, string id) => FileTransaction.Contained(root, id);
@@ -167,14 +192,16 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
                 actual.Add(key);
                 if (!package.Files.TryGetValue(key, out string? hash) || FileTransaction.Hash(path) != hash)
                 {
-                    throw new IOException("Local changes preserved; package update skipped: " + path);
+                    throw new IOException($"Local changes were found in {path}. Back up your edits and restore " +
+                        "the package's original files before retrying Shader packages > Install / update selected.");
                 }
             }
         }
 
         if (package.Files.Keys.Any(value => !actual.Contains(value)))
         {
-            throw new IOException("Local deletions preserved; package update skipped: " + package.Name);
+            throw new IOException($"Files are missing from {package.Name}. Restore the package's original files " +
+                "from its repository or use Runtime & storage > Restore, then retry the package update.");
         }
     }
 

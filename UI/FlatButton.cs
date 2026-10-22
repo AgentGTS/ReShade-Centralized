@@ -49,7 +49,8 @@ internal sealed class FlatButton : Button
             background = FlatAppearance.MouseOverBackColor;
         }
 
-        Color foreground = Enabled ? ForeColor : DarkTheme.Muted;
+        Color disabledForeground = SystemInformation.HighContrast ? SystemColors.GrayText : DarkTheme.Muted;
+        Color foreground = Enabled ? ForeColor : disabledForeground;
         using var fill = new SolidBrush(background);
         e.Graphics.FillRectangle(fill, ClientRectangle);
         if (FlatAppearance.BorderSize > 0 || (Focused && ShowFocusCues))

@@ -1,0 +1,74 @@
+GETTING STARTED
+
+Run ReShade Centralized as administrator from a permanent folder. On first launch, choose your central folder. Keep the central folder available whenever you play managed games.
+
+1. Open Runtime & storage > Update ReShade. This downloads the standard runtime and the version with add-on support, for both x86 and x64 games.
+2. Open Shader packages, select the effects you want, and choose Install / update selected. Required standard effects stay selected.
+3. Open Games > Install game. Select the executable that actually runs the game, its graphics API, and its build. The app detects its architecture and uses the executable filename in the table.
+4. Launch the game normally. Open ReShade's in-game overlay to choose effects and save your preset.
+
+CHOOSING AN API AND BUILD
+
+Choose DirectX 9 for DirectX 9 games, DXGI (DirectX 10/11/12) for those DirectX versions, OpenGL for OpenGL games, or Vulkan for Vulkan games. Match the graphics API selected in the game's settings. If you change that setting later, use Games > Repair / edit to update the installation.
+
+Standard is the default build. Choose Standard + add-on support only when you need an add-on that requires it. Add-ons are installed manually; this app does not download them.
+
+DirectX and OpenGL use a small DLL link beside each selected executable. Each link points to the central runtime for that game's build and architecture. Adding a game does not hook other games automatically.
+
+VULKAN GAMES
+
+Vulkan uses a shared ReShade layer registered with Windows for both architectures, rather than a proxy DLL beside each game. Installing a Vulkan game through Games sets up the layer and places its ReShade.ini link beside the executable. Launch the game normally afterward.
+
+The build under Runtime & storage > Vulkan - all games applies to every Vulkan game using this managed layer. To change it, select the build and choose Apply / repair. DirectX and OpenGL games keep their own build choices.
+
+The Vulkan registration is shared, but each managed game's configuration, preset, cache, and screenshots remain separate. The layer normally skips applications without ReShade configuration beside their executable.
+
+Vulkan games lists managed games and consumers recorded by registered ReShade installations. It refreshes at startup, when Runtime & storage opens, and after manager operations. Entries marked (Managed) are muted; edit or remove those games from the Games tab. Select an unmanaged entry and choose Manage game to adopt it. Shared Vulkan support is retained while recorded consumers still need it.
+
+The Vulkan status checks both Windows registry views and the selected runtime's manifests. A yellow warning means the layer is missing, disabled, conflicting, or cannot be verified. Follow the warning and use Apply / repair. Registration checks do not change the system. The list contains recorded applications; it does not detect every game installed on the computer or show which games are running.
+
+UPDATING RUNTIMES AND EFFECTS
+
+Close affected games before updating. Update ReShade replaces the central runtimes for all supported APIs. Existing managed links receive the update without reinstalling every game. Adding a new game still requires Install game.
+
+The footer shows installed runtime versions. Not installed means the central DLLs are absent. Incomplete, Version mismatch, Unknown version, or Unavailable means the runtime needs attention; check Activity and use Update ReShade or import official installers.
+
+Use Shader packages > Update installed packages to update packages already installed. To add packages, select them and choose Install / update selected. Clearing a selection does not delete installed effects. Refresh catalog retrieves the current package list; the app also has an offline catalog.
+
+If some packages fail, successful packages still install. Read Activity for each failed package and retry later. A package whose required dependency failed may be skipped. Previous installed files are retained when an update fails. Locally edited packages are preserved and reported as conflicts; back up those edits before resolving the conflict and retrying.
+
+EXISTING INSTALLATIONS AND DUPLICATE EFFECTS
+
+An unmanaged ReShade installation triggers a yellow warning below the executable path. Review it before installing. Recognized files being replaced are backed up. Unrecognized DLLs or managed links changed by another tool can block installation; resolve the specific path shown in the warning instead of deleting unrelated DLLs.
+
+An old reshade-shaders folder is left intact. If effects appear twice, check ReShade's effect search paths in its overlay settings. Remove an unused old search path, or back up custom shaders and then remove the unused local folder. Different packages can also contain effects with identical filenames; choose which effect you want to use.
+
+GAME SETTINGS, PRESETS, AND SCREENSHOTS
+
+Select a game and choose Open profile to find its configuration and presets, or Open game folder to open the folder containing its executable. Imported profiles need their executable selected before Open game folder is available. Profile folder names use generated IDs; use the game table to identify them. Settings, cache, and screenshot folders are kept separately for each game within central storage. Existing custom preset paths can be retained.
+
+Repair / edit changes the executable, API, or build and repairs that game's managed links. Repair all repairs all listed games. Imported legacy profiles need their actual executable selected before repair or relocation. Row actions stay disabled until you select a game.
+
+Remove deletes that game's owned links while retaining its profile and presets. Files changed by another installer are preserved and may need your attention.
+
+MOVING, RESTORING, AND UPDATING THE APP
+
+Use Runtime & storage > Relocate central folder to move managed data and repair its links and Vulkan registration. Choose a separate, empty destination. Original data is retained until verification succeeds. Moving folders manually can break existing links.
+
+Use Runtime & storage > Restore to return to the state before a saved operation. Restoring an older operation also undoes newer manager operations. Close affected games first. Keep Backups intact; it contains files and registry information needed for restoration.
+
+When replacing the application with a newer release, retain ReShadeCentralized.json and Backups beside it. Keep your central storage. Check app release checks for a new version of this manager; Update ReShade updates the runtime, and Update installed packages updates effects.
+
+COMMON PROBLEMS
+
+ReShade does not load: check that you selected the actual game executable rather than its launcher, and that the API matches the game's settings. Confirm a runtime is installed, close the game, then select its row and use Repair / edit. For Vulkan, also use Apply / repair if another installer changed the shared layer. Some games block injection or do not support ReShade.
+
+A download fails: check Activity for the package, URL, or network error. Check your connection and retry. For runtime downloads, you can download both matching official installers from reshade.me and use Runtime & storage > Import downloaded installers. Select the standard installer first, then the installer with add-on support. The app extracts them without running them.
+
+Access denied or file in use: close affected games and other ReShade installers, run this app as administrator, and check that the listed folder is writable. Retry the operation. Do not delete central DLLs to work around a lock.
+
+A control is disabled: select the relevant game, Vulkan consumer, or package first. Update installed packages becomes available after a package has been installed. During an operation, wait for completion or use Cancel.
+
+Cancel keeps completed work and rolls back unfinished changes. If an operation fails, follow its error message and read Activity for details and paths before retrying.
+
+Open this guide with the ? button or F1. You can select and copy its text. Press Escape or Close to return to the app.

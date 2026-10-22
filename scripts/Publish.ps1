@@ -8,9 +8,6 @@ dotnet publish (Join-Path $repo 'ReShade Centralized.csproj') -c Release -r win-
     -p:DebugType=None -p:DebugSymbols=false -o $OutputDirectory --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
 Copy-Item -LiteralPath (Join-Path $repo 'README.md'), (Join-Path $repo 'LICENSE.md') -Destination $OutputDirectory
-$docs = Join-Path $OutputDirectory 'docs'
-New-Item -ItemType Directory -Path $docs -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $repo 'docs\VALIDATION.md') -Destination $docs
 $assets = Get-Content -LiteralPath (Join-Path $repo 'obj\project.assets.json') -Raw | ConvertFrom-Json
 $noticeParts = New-Object 'System.Collections.Generic.List[string]'
 $dependencies = $assets.project.frameworks.PSObject.Properties.Value.downloadDependencies |
@@ -44,6 +41,6 @@ $hash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvari
 $zip = Join-Path (Split-Path -Parent $OutputDirectory) "ReShade-Centralized-$appVersion-win-x64.zip"
 # Package only release files, even when a prior executable has already created manager data.
 Compress-Archive -LiteralPath $binary, (Join-Path $OutputDirectory 'README.md'), (Join-Path $OutputDirectory 'LICENSE.md'), `
-    (Join-Path $OutputDirectory 'SHA256SUMS.txt'), $thirdParty, $docs -DestinationPath $zip -Force
+    (Join-Path $OutputDirectory 'SHA256SUMS.txt'), $thirdParty -DestinationPath $zip -Force
 Write-Host "Release: $zip"
 Write-Host "SHA-256: $hash"

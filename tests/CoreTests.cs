@@ -4,6 +4,36 @@ namespace ReShadeCentralized.Tests;
 
 internal static partial class TestSuite
 {
+    private static Task InstallationNoticeDistinguishesConfigAndConflictsAsync()
+    {
+        string directory = CreateTestDirectory("installation-notice");
+        string executable = Path.Combine(directory, "game.exe");
+        File.WriteAllText(executable, "Inspection fixture");
+        string shaders = Path.Combine(directory, "reshade-shaders");
+        Directory.CreateDirectory(shaders);
+        AssertTrue(DeploymentService.InspectExistingInstallation(executable, RenderApi.DXGI, []) == null);
+        string config = Path.Combine(directory, "ReShade.ini");
+        const string original = "[GENERAL]\nPerformanceMode=1\n";
+        File.WriteAllText(config, original);
+        ExistingInstallationNotice? notice = DeploymentService.InspectExistingInstallation(
+            executable, RenderApi.Vulkan, []);
+        AssertTrue(notice != null && !notice.BlocksInstallation);
+        AssertTrue(notice!.Message.Contains("back up and replace") && notice.Message.Contains("reshade-shaders"));
+        AssertTrue(File.ReadAllText(config) == original && Directory.Exists(shaders));
+        AssertTrue(DeploymentService.InspectExistingInstallation(
+            Path.Combine(directory, "missing.exe"), RenderApi.DXGI, []) == null);
+
+        File.WriteAllText(Path.Combine(directory, "dxgi.dll"), "unrelated file");
+        notice = DeploymentService.InspectExistingInstallation(executable, RenderApi.DXGI, []);
+        AssertTrue(notice!.BlocksInstallation && notice.Message.Contains("unrecognized DLL"));
+        notice = DeploymentService.InspectExistingInstallation(executable, RenderApi.OpenGL, []);
+        AssertTrue(!notice!.BlocksInstallation, "An unrelated DLL for another API must not block this hook.");
+        notice = DeploymentService.InspectExistingInstallation(executable, RenderApi.OpenGL,
+            [new OwnedLink(config, Path.Combine(directory, "original-managed.ini"))]);
+        AssertTrue(notice!.BlocksInstallation && notice.Message.Contains("changed outside this app"));
+        return Task.CompletedTask;
+    }
+
     private static Task DeploymentRejectsUnsupportedApisBeforeChangingFilesAsync()
     {
         string directory = CreateTestDirectory("unsupported-api");

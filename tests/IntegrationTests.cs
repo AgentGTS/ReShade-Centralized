@@ -4,6 +4,98 @@ namespace ReShadeCentralized.Tests;
 
 internal static partial class TestSuite
 {
+    private static async Task ExecutableNamesChangeWithoutMovingProfilesAsync()
+    {
+        string directory = CreateTestDirectory("executable-names");
+        var store = new StateStore(Path.Combine(directory, "manager"));
+        using var manager = new Manager(store, new InMemoryLayerRegistry());
+        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
+        await manager.ImportRuntimeAsync(
+            Path.Combine(repositoryRoot, ".validation", "ReShade_Setup_6.8.0.exe"),
+            Path.Combine(repositoryRoot, ".validation", "ReShade_Setup_6.8.0_Addon.exe"),
+            None);
+        string folder = Path.Combine(directory, "game");
+        Directory.CreateDirectory(folder);
+        string executable = Path.Combine(folder, "game.exe");
+        string replacement = Path.Combine(folder, "updated-game.exe");
+        string runtime = Path.Combine(runtimePayload, "Standard", "ReShade64.dll");
+        File.Copy(runtime, executable);
+        File.Copy(runtime, replacement);
+        await manager.InstallAsync(new GameProfile { Executable = executable, Api = RenderApi.DXGI }, None);
+        GameProfile installed = manager.State!.Games.Single();
+        AssertTrue(installed.Name == "game.exe" && store.Load()!.Games.Single().Name == "game.exe");
+        string id = installed.Id;
+        string profileDirectory = installed.Directory;
+        string preset = Path.Combine(profileDirectory, "ReShadePreset.ini");
+        File.WriteAllText(preset, "Custom preset contents");
+
+        GameProfile request = manager.State.Clone().Games.Single();
+        request.Name = "Ignored custom name";
+        request.Executable = replacement;
+        await manager.InstallAsync(request, None);
+        installed = manager.State.Games.Single();
+        AssertTrue(installed.Name == "updated-game.exe" && installed.Id == id);
+        AssertTrue(installed.Directory == profileDirectory && File.ReadAllText(preset) == "Custom preset contents");
+        AssertTrue(store.Load()!.Games.Single().Name == "updated-game.exe");
+        AssertTrue(installed.Links.All(DeploymentService.IsOwnedLink));
+    }
+
+    private static Task UnmanagedInstallationDetectionPreservesBackupsAsync()
+    {
+        string directory = CreateTestDirectory("unmanaged-installation");
+        ManagerState state = CreateState(Path.Combine(directory, "central"));
+        string backups = Path.Combine(directory, "backups");
+        DeployRuntimePayload(state, backups, new InMemoryLayerRegistry());
+        string gameDirectory = Path.Combine(directory, "game");
+        Directory.CreateDirectory(Path.Combine(gameDirectory, "reshade-shaders", "Shaders"));
+        string localShader = Path.Combine(gameDirectory, "reshade-shaders", "Shaders", "Custom.fx");
+        File.WriteAllText(localShader, "// custom shader");
+        string executable = Path.Combine(gameDirectory, "game.exe");
+        string proxy = Path.Combine(gameDirectory, "dxgi.dll");
+        string runtime = Path.Combine(state.Paths.StandardBinaries, "ReShade64.dll");
+        File.Copy(runtime, executable);
+        File.Copy(runtime, proxy);
+        string config = Path.Combine(gameDirectory, "ReShade.ini");
+        const string originalConfig = "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\n";
+        File.WriteAllText(config, originalConfig);
+        string proxyHash = FileTransaction.Hash(proxy);
+        ExistingInstallationNotice? notice = DeploymentService.InspectExistingInstallation(
+            executable, RenderApi.DXGI, []);
+        AssertTrue(notice != null && !notice.BlocksInstallation);
+        AssertTrue(notice!.Message.Contains("dxgi.dll") && notice.Message.Contains("ReShade.ini") &&
+            notice.Message.Contains("reshade-shaders"));
+
+        notice = DeploymentService.InspectExistingInstallation(executable, RenderApi.OpenGL, []);
+        AssertTrue(notice!.BlocksInstallation && notice.Message.Contains("matching Graphics API"));
+        var game = new GameProfile
+        {
+            Name = "Existing ReShade",
+            Executable = executable,
+            Api = RenderApi.DXGI,
+            Directory = Path.Combine(state.Paths.Profiles, "existing")
+        };
+        string backup;
+        using (var transaction = new FileTransaction(backups, "Adopt unmanaged ReShade"))
+        {
+            backup = transaction.BackupDirectory;
+            DeploymentService.Install(state, game, transaction);
+            transaction.Commit();
+        }
+
+        AssertTrue(game.Links.Count == 2 && game.Links.All(DeploymentService.IsOwnedLink));
+        AssertTrue(DeploymentService.InspectExistingInstallation(executable, RenderApi.DXGI, game.Links) == null);
+        AssertTrue(File.ReadAllText(localShader) == "// custom shader");
+        File.Delete(proxy);
+        File.Copy(runtime, proxy);
+        notice = DeploymentService.InspectExistingInstallation(executable, RenderApi.DXGI, game.Links);
+        AssertTrue(notice!.BlocksInstallation && notice.Message.Contains("changed outside this app"));
+        FileTransaction.Restore(backup, null);
+        AssertTrue(FileTransaction.Link(proxy) == null && FileTransaction.Hash(proxy) == proxyHash);
+        AssertTrue(FileTransaction.Link(config) == null && File.ReadAllText(config) == originalConfig);
+        AssertTrue(File.Exists(localShader));
+        return Task.CompletedTask;
+    }
+
     private static Task BuildIdentityAndVulkanManifestTraversalValidationAsync()
     {
         AssertThrows<InvalidDataException>(() => RuntimeService.ValidatePayload(

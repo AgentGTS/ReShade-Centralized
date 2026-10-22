@@ -71,6 +71,16 @@ public sealed class GameProfile
 }
 
 public sealed record OwnedLink(string Path, string Target);
+public sealed record ExistingInstallationNotice(string Message, bool BlocksInstallation);
+
+public sealed class PackageUpdateReport
+{
+    public int InstalledCount { get; internal set; }
+    public int FailedCount { get; internal set; }
+    public List<string> Messages { get; } = [];
+    public string Summary => $"Shader packages: {InstalledCount} installed, {FailedCount} failed.";
+}
+
 public sealed class InstalledPackage
 {
     public string Id { get; set; } = "";
@@ -98,7 +108,6 @@ public sealed class ManagerState
     public bool VulkanManaged { get; set; }
 
     public List<string> ExternalVulkanApps { get; set; } = [];
-    public List<string> IgnoredVulkanApps { get; set; } = [];
     public List<LayerRegistration> OwnedRegistrations { get; set; } = [];
     public static JsonSerializerOptions Json { get; } = new()
     {

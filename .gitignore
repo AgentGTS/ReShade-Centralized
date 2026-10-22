@@ -339,6 +339,9 @@ ASALocalRun/
 # BeatPulse healthcheck temp database
 healthchecksdb
 
+# Local editor settings
+.vscode/
+
 # Local agent instructions
 AGENTS.md
 

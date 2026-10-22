@@ -27,9 +27,7 @@ internal static class DarkTheme
         SystemInformation.HighContrast ? SystemColors.Highlight : Color.FromArgb(40, 69, 69);
 
     public static Font BodyFont { get; } = new("Segoe UI", 10);
-    public static Font TitleFont { get; } = new("Segoe UI", 22, FontStyle.Bold);
     public static Font HeadingFont { get; } = new("Segoe UI", 15, FontStyle.Bold);
-    public static Font SmallFont { get; } = new("Segoe UI", 9);
     public static Font MonospaceFont { get; } = new("Consolas", 10);
 
     public static void Apply(Form form)

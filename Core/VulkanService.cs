@@ -6,6 +6,11 @@ namespace ReShadeCentralized;
 
 public sealed record LayerRegistration(string Hive, string View, string Manifest, string Kind = "Implicit");
 public sealed record RegistrySnapshot(LayerRegistration Registration, int? PreviousValue);
+public sealed record VulkanInspection(
+    bool IsApplied,
+    string Message,
+    IReadOnlyList<string> Consumers,
+    string? Error = null);
 public interface ILayerRegistry
 {
     IEnumerable<LayerRegistration> Enumerate();
@@ -97,6 +102,118 @@ public sealed class WindowsLayerRegistry(string registryRoot = @"SOFTWARE\Khrono
 
 public sealed class VulkanService(ILayerRegistry registry)
 {
+    private static List<LayerRegistration> DesiredRegistrations(ManagerState state)
+    {
+        string binaries = state.Paths.Binaries(state.VulkanBuild);
+        return
+        [
+            new("HKLM", "64", Path.Combine(binaries, "ReShade64.json")),
+            new("HKLM", "32", Path.Combine(binaries, "ReShade32.json"))
+        ];
+    }
+
+    private static bool SameRegistration(LayerRegistration first, LayerRegistration second) =>
+        first.Hive.Equals(second.Hive, StringComparison.OrdinalIgnoreCase) && first.View == second.View &&
+        first.Kind.Equals(second.Kind, StringComparison.OrdinalIgnoreCase) &&
+        FileTransaction.Same(first.Manifest, second.Manifest);
+
+    public VulkanInspection Inspect(ManagerState? state)
+    {
+        const string notApplied = "Not applied. Choose Apply / repair.";
+        if (state == null)
+        {
+            return new(false, notApplied, []);
+        }
+
+        var consumers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (GameProfile game in state.Games.Where(game => game.Api == RenderApi.Vulkan &&
+            game.Executable != null))
+        {
+            consumers.Add(game.Executable!);
+        }
+
+        void AddExternalConsumers(IEnumerable<string> applications)
+        {
+            foreach (string application in applications)
+            {
+                if (!state.Games.Any(game => game.Executable != null &&
+                        FileTransaction.Same(game.Executable, application)))
+                {
+                    consumers.Add(application);
+                }
+            }
+        }
+
+        AddExternalConsumers(state.ExternalVulkanApps);
+        List<LayerRegistration> desired = DesiredRegistrations(state);
+        bool competing = false;
+        string? inspectionError = null;
+        try
+        {
+            foreach (LayerRegistration registration in registry.Enumerate())
+            {
+                bool isDesired = desired.Any(expected => SameRegistration(expected, registration));
+                bool recognized = isDesired || Path.GetFileName(registration.Manifest)
+                    .Contains("reshade", StringComparison.OrdinalIgnoreCase);
+                try
+                {
+                    string? library = RecognizedLibrary(registration.Manifest);
+                    if (library == null)
+                    {
+                        if (recognized)
+                        {
+                            inspectionError = "Cannot verify ReShade manifest: " + registration.Manifest;
+                        }
+                        continue;
+                    }
+
+                    recognized = true;
+                    competing |= !isDesired;
+                    string appsPath = Path.Combine(Path.GetDirectoryName(registration.Manifest)!, "ReShadeApps.ini");
+                    if (File.Exists(appsPath))
+                    {
+                        AddExternalConsumers(IniDocument.Split(IniDocument.Read(appsPath).Get("", "Apps")));
+                    }
+                }
+                catch (Exception error) when (error is JsonException or IOException or UnauthorizedAccessException
+                    or InvalidOperationException or KeyNotFoundException or ArgumentException)
+                {
+                    if (recognized)
+                    {
+                        inspectionError = registration.Manifest + ": " + error.Message;
+                    }
+                }
+            }
+
+            if (inspectionError != null)
+            {
+                return new(false, "Vulkan registration needs attention. Choose Apply / repair; see Activity.",
+                    consumers.Order(StringComparer.OrdinalIgnoreCase).ToArray(), inspectionError);
+            }
+
+            string[] applications = consumers.Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (competing)
+            {
+                return new(false, "Another ReShade Vulkan layer is registered. Choose Apply / repair.", applications);
+            }
+
+            if (desired.Any(registration => registry.Read(registration) != 0))
+            {
+                return new(false, notApplied, applications);
+            }
+
+            RuntimeService.ValidatePayload(state.Paths.Binaries(state.VulkanBuild), state.VulkanBuild);
+            return new(true, "Applied (x86 and x64).", applications);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException
+            or InvalidOperationException or KeyNotFoundException or ArgumentException or NotSupportedException
+            or System.Security.SecurityException or System.ComponentModel.Win32Exception or BadImageFormatException)
+        {
+            return new(false, "Cannot verify the Vulkan layer. Update ReShade, then Apply / repair; see Activity.",
+                consumers.Order(StringComparer.OrdinalIgnoreCase).ToArray(), error.Message);
+        }
+    }
+
     public static string? RecognizedLibrary(string path)
     {
         if (!File.Exists(path))
@@ -126,12 +243,15 @@ public sealed class VulkanService(ILayerRegistry registry)
     public void Enable(ManagerState state, FileTransaction transaction)
     {
         string binaries = state.Paths.Binaries(state.VulkanBuild);
-        RuntimeService.ValidatePayload(binaries);
-        var desired = new List<LayerRegistration>
+        string[] requiredFiles = ["ReShade32.dll", "ReShade64.dll", "ReShade32.json", "ReShade64.json"];
+        if (requiredFiles.Any(file => !File.Exists(Path.Combine(binaries, file))))
         {
-            new("HKLM", "64", Path.Combine(binaries, "ReShade64.json")),
-            new("HKLM", "32", Path.Combine(binaries, "ReShade32.json"))
-        };
+            throw new InvalidOperationException("The Vulkan runtime is not installed completely. " +
+                "Open Runtime & storage > Update ReShade, then retry Vulkan > Apply / repair.");
+        }
+
+        RuntimeService.ValidatePayload(binaries);
+        List<LayerRegistration> desired = DesiredRegistrations(state);
         foreach (LayerRegistration? item in registry.Enumerate().ToArray())
         {
             string? library;
@@ -174,15 +294,14 @@ public sealed class VulkanService(ILayerRegistry registry)
                 {
                     if (!state.Games.Any(game => game.Executable != null &&
                         FileTransaction.Same(game.Executable, app)) &&
-                        !state.ExternalVulkanApps.Contains(app, StringComparer.OrdinalIgnoreCase) &&
-                        !state.IgnoredVulkanApps.Contains(app, StringComparer.OrdinalIgnoreCase))
+                        !state.ExternalVulkanApps.Contains(app, StringComparer.OrdinalIgnoreCase))
                     {
                         state.ExternalVulkanApps.Add(app);
                     }
                 }
             }
 
-            if (!desired.Contains(item))
+            if (!desired.Any(expected => SameRegistration(expected, item)))
             {
                 transaction.SetRegistry(item, null);
             }

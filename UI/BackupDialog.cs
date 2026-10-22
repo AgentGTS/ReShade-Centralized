@@ -18,8 +18,8 @@ internal sealed class BackupDialog : Form
 
     public BackupDialog(string backups)
     {
-        Text = "Restore a previous state";
-        ClientSize = new(880, 500);
+        Text = "Restore";
+        ClientSize = new(880, 390);
         TableLayoutPanel table = DialogLayout.Table(this);
         if (Directory.Exists(backups))
         {
@@ -33,17 +33,11 @@ internal sealed class BackupDialog : Form
             }
         }
 
-        DialogLayout.Row(table, "Backup", list);
-        DialogLayout.Row(
-            table,
-            "",
-            new Label
-            {
-                Text = "Restore the state immediately before this operation.\nNewer operations are " +
-            "undone first. Close affected games before restoring.",
-                AutoSize = true
-            });
-        DialogLayout.Buttons(table, this, "Restore");
+        list.AccessibleName = "Operations";
+        DialogLayout.Row(table, "", list);
+        Button restore = DialogLayout.Buttons(table, this, "Restore before operation");
+        restore.Enabled = false;
+        list.SelectedIndexChanged += (_, _) => restore.Enabled = list.SelectedItem is Choice;
         if (list.Items.Count > 0)
         {
             list.SelectedIndex = 0;
