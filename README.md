@@ -1,20 +1,18 @@
 # ReShade Centralized
 
-One place for ReShade runtimes and shaders, with separate settings and presets for each game. Runs on Windows 10/11 x64 and supports x86/x64 games using DirectX 9-12, OpenGL, and Vulkan.
+Shared ReShade runtimes and shaders, with per-game presets. Windows 10/11 x64.
 
 ## Install and use
 
-1. Extract the release into a permanent folder and run **ReShade Centralized.exe** as administrator. The release includes .NET.
-2. Choose your central folder. To import an older installation, select its `ReShadeCentralized.ini`.
-3. Open **Runtime & storage** and choose **Update ReShade**.
-4. Under **Shader packages**, select packages and choose **Install / update selected**.
-5. Under **Games**, choose **Install game...** and select the game's executable, graphics API, and build.
+1. Extract the release and run **ReShade Centralized.exe** as administrator. .NET is included.
+2. Choose central storage, then **Runtime & storage > Update ReShade**.
+3. In **Shader packages**, choose packages and select **Install / update selected**.
+4. Choose **Games > Install game...**. Select the game executable, API, and build.
+5. Launch the game; choose effects and save a preset in ReShade's overlay.
 
-For Vulkan, use **Apply / repair** under **Vulkan — all games**.
+Close games before updates, relocation, or restore. Keep `ReShadeCentralized.json`, `Backups`, and central storage when updating the app.
 
-Use **Repair / edit...** to change an installation, **Remove** to remove its managed links, and **Restore...** to undo changes. Presets are retained. Close affected games before updates, relocation, or restore.
-
-Keep `ReShadeCentralized.json` and `Backups` beside the application when updating it. Imported profiles need their game executable selected before repair or relocation.
+For errors, check **Activity**. Press **F1** for [usage and troubleshooting](Assets/Help.txt).
 
 ## Build and test
 
@@ -32,7 +30,7 @@ Release files are written to `artifacts`.
 
 - [OopyDoopy](https://github.com/OopyDoopy/ReShade-Centralized): original ReShade Centralized.
 - [crosire and contributors](https://github.com/crosire/reshade): ReShade and the [official shader catalog](https://github.com/crosire/reshade-shaders/blob/list/EffectPackages.ini).
-- Shader package authors: their shaders, includes, and textures.
+- Shader package authors.
 - [.NET contributors](https://github.com/dotnet): WinForms and the bundled runtime.
 
-This manager uses the [MIT license](LICENSE.md). ReShade, shader packages, and the .NET runtime retain their own licenses. Runtime notices are included in the release's `THIRD-PARTY-NOTICES.txt`.
+[MIT license](LICENSE.md). Third-party licenses apply; see `THIRD-PARTY-NOTICES.txt` in the release.
