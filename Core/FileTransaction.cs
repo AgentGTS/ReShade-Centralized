@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -28,11 +29,12 @@ public sealed class JournalEvent
     public RegistrySnapshot? Registry { get; set; }
 }
 
-// Every mutation is journaled before it occurs. Backups survive commit for explicit restore.
+// Recovery data lasts only until an operation commits or rolls back.
 public sealed class FileTransaction : IDisposable
 {
     private readonly string directory;
     private readonly ILayerRegistry? registry;
+    private readonly Action<string>? reportWarning;
     private readonly TransactionJournal journal = new();
     private readonly HashSet<string> captured = new(StringComparer.OrdinalIgnoreCase);
     private static readonly JsonSerializerOptions CompactJson = new(ManagerState.Json)
@@ -41,13 +43,18 @@ public sealed class FileTransaction : IDisposable
     };
 
     private bool done;
-    public string BackupDirectory => directory;
+    public string RecoveryDirectory => directory;
 
-    public FileTransaction(string backups, string description, ILayerRegistry? registry = null)
+    public FileTransaction(
+        string recovery,
+        string description,
+        ILayerRegistry? registry = null,
+        Action<string>? reportWarning = null)
     {
         this.registry = registry;
+        this.reportWarning = reportWarning;
         directory = Path.Combine(
-            backups,
+            recovery,
             DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff") + "-" + Guid.NewGuid().ToString("N")[..8]);
         System.IO.Directory.CreateDirectory(directory);
         journal.Description = description;
@@ -207,6 +214,7 @@ public sealed class FileTransaction : IDisposable
         journal.Status = "committed";
         Flush();
         done = true;
+        Cleanup(directory, reportWarning);
     }
 
     private void Append(JournalEvent entry) =>
@@ -255,8 +263,9 @@ public sealed class FileTransaction : IDisposable
             return;
         }
 
-        Restore(directory, registry);
+        Rollback(directory, registry);
         done = true;
+        Cleanup(directory, reportWarning);
     }
 
     public static TransactionJournal ReadJournal(string directory)
@@ -264,7 +273,7 @@ public sealed class FileTransaction : IDisposable
         TransactionJournal journal = JsonSerializer.Deserialize<TransactionJournal>(
             File.ReadAllText(Path.Combine(directory, "transaction.json")),
             ManagerState.Json) ??
-            throw new InvalidDataException("Invalid backup journal.");
+            throw new InvalidDataException("Invalid recovery journal.");
         string events = Path.Combine(directory, "events.jsonl");
         if (journal.Status == "pending" && File.Exists(events))
         {
@@ -287,6 +296,7 @@ public sealed class FileTransaction : IDisposable
                     {
                         journal.Registry.Add(entry.Registry);
                     }
+
                 }
             }
         }
@@ -294,20 +304,25 @@ public sealed class FileTransaction : IDisposable
         return journal;
     }
 
-    public static void Restore(string directory, ILayerRegistry? registry)
+    public static void Rollback(string directory, ILayerRegistry? registry)
     {
         TransactionJournal journal = ReadJournal(directory);
+        if (journal.Status == "restored")
+        {
+            return;
+        }
+
         foreach (FileSnapshot? item in journal.Files.Where(snapshot => snapshot.Backup != null))
         {
             if (Hash(Contained(directory, item.Backup!)) != item.Hash)
             {
-                throw new InvalidDataException("Backup hash mismatch: " + item.Path);
+                throw new InvalidDataException("Recovery data hash mismatch: " + item.Path);
             }
         }
 
         if (journal.Registry.Count > 0 && registry == null)
         {
-            throw new InvalidOperationException("Registry access is required to restore this backup.");
+            throw new InvalidOperationException("Registry access is required to recover this operation.");
         }
 
         FileSnapshot[] restore = journal.Files.AsEnumerable().Reverse().Where(item => !AlreadyOriginal(item)).ToArray();
@@ -359,9 +374,11 @@ public sealed class FileTransaction : IDisposable
         }
 
         journal.Status = "restored";
+        string journalPath = Path.Combine(directory, "transaction.json");
         File.WriteAllText(
-            Path.Combine(directory, "transaction.json"),
+            journalPath + ".tmp",
             JsonSerializer.Serialize(journal, ManagerState.Json));
+        AtomicMove(journalPath + ".tmp", journalPath);
     }
 
     private static bool AlreadyOriginal(FileSnapshot item)
@@ -379,19 +396,64 @@ public sealed class FileTransaction : IDisposable
         return !Exists(item.Path);
     }
 
-    public static void RecoverPending(string backups, ILayerRegistry registry)
+    private static void Cleanup(string directory, Action<string>? reportWarning)
     {
-        if (!System.IO.Directory.Exists(backups))
+        try
+        {
+            // Only remove the specific transaction directory, never its parent or a linked tree.
+            CheckParents(Path.Combine(directory, "check"));
+            if (System.IO.Directory.EnumerateDirectories(directory).Any())
+            {
+                throw new IOException("The recovery folder contains unexpected subfolders.");
+            }
+
+            string journalPath = Path.Combine(directory, "transaction.json");
+            foreach (string file in System.IO.Directory.EnumerateFiles(directory))
+            {
+                if (!Same(file, journalPath))
+                {
+                    File.Delete(file);
+                }
+            }
+
+            // Keep the completion record until all payloads are gone, including when cleanup is interrupted.
+            File.Delete(journalPath);
+            System.IO.Directory.Delete(directory);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            string message = "Could not remove temporary recovery data: " + directory + ". " + error.Message;
+            Trace.TraceWarning(message);
+            reportWarning?.Invoke(message);
+        }
+    }
+
+    public static void RecoverPending(
+        string recovery,
+        ILayerRegistry registry,
+        Action<string>? reportWarning = null)
+    {
+        if (!System.IO.Directory.Exists(recovery))
         {
             return;
         }
 
-        foreach (string directory in System.IO.Directory.GetDirectories(backups).OrderDescending())
+        foreach (string directory in System.IO.Directory.GetDirectories(recovery).OrderDescending())
         {
+            if (!File.Exists(Path.Combine(directory, "transaction.json")) &&
+                !System.IO.Directory.EnumerateFileSystemEntries(directory).Any())
+            {
+                Cleanup(directory, reportWarning);
+
+                continue;
+            }
+
             if (ReadJournal(directory).Status == "pending")
             {
-                Restore(directory, registry);
+                Rollback(directory, registry);
             }
+
+            Cleanup(directory, reportWarning);
         }
     }
 }

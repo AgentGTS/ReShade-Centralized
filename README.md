@@ -5,18 +5,36 @@ Shared ReShade runtimes and shaders, with per-game presets. Windows 10/11 x64.
 ## Install and use
 
 1. Extract the release and run **ReShade Centralized.exe** as administrator. .NET is included.
-2. Choose central storage, then **Runtime & storage > Update ReShade**.
-3. In **Shader packages**, choose packages and select **Install / update selected**.
-4. Choose **Games > Install game...**. Select the game executable, API, and build.
-5. Launch the game; choose effects and save a preset in ReShade's overlay.
+2. Keep the default central folder (`Documents\ReShade Centralized`) or choose a folder outside the app folder.
+3. Choose **Runtime & storage > Update ReShade**.
+4. In **Shader packages**, select packages and choose **Update selected**.
 
-Close games before updates, relocation, or restore. Keep `ReShadeCentralized.json`, `Backups`, and central storage when updating the app.
+For example, to install for a DirectX 11 game:
 
-For errors, check **Activity**. Press **F1** for [usage and troubleshooting](Assets/Help.txt).
+1. Choose **Games > Install game...** and select the game's executable.
+2. Select **DXGI (DirectX 10/11/12)** and **Standard**, review the changes, then choose **Install**.
+3. Launch the game and use ReShade's overlay to select effects and save a preset.
+
+For a Vulkan game:
+
+1. In **Runtime & storage**, choose **Apply / repair** to apply the Vulkan layer.
+2. Choose **Games > Install game...** and select the game's executable.
+3. Select **Vulkan**, review the changes, then choose **Install**.
+4. Launch the game and use ReShade's overlay to select effects and save a preset.
+
+Press **F1** or read [Help](Assets/Help.txt) for other APIs, add-ons, updates, removal and troubleshooting.
 
 ## Build and test
 
-Requires the .NET 10 SDK on Windows.
+Requires Windows and the .NET 10 SDK.
+
+### Debug
+
+Double-click **BuildRunDebug.bat** to build and run in one elevated console with live logs. It waits for a keypress if the build fails and closes when the app exits.
+
+### Release
+
+Run these commands in PowerShell from the repository folder:
 
 ```powershell
 dotnet build 'ReShade Centralized.sln' -c Release

@@ -19,18 +19,22 @@ internal static partial class TestSuite
         string directX = Path.Combine(directory, "directx.exe");
         state.Games.Add(new GameProfile { Executable = managed, Api = RenderApi.Vulkan });
         state.Games.Add(new GameProfile { Executable = directX, Api = RenderApi.DXGI });
-        state.ExternalVulkanApps.AddRange([external, managed.ToUpperInvariant(), directX]);
         using (var transaction = new FileTransaction(backups, "apply", registry))
         {
             service.Enable(state, transaction);
             transaction.Commit();
         }
 
+        string sharedApps = Path.Combine(state.VulkanLayerDirectory!, "ReShadeApps.ini");
+        File.AppendAllText(sharedApps, "\n");
+        var shared = IniDocument.Read(sharedApps);
+        shared.Set("", "Apps", IniDocument.Join([managed, external, directX]));
+        File.WriteAllText(sharedApps, shared.ToString());
         VulkanInspection applied = service.Inspect(state);
         AssertTrue(applied.IsApplied && applied.Error == null);
         AssertTrue(applied.Consumers.Count == 2 && applied.Consumers.Contains(managed) &&
             applied.Consumers.Contains(external));
-        LayerRegistration registration = state.OwnedRegistrations.Single(item => item.View == "32");
+        LayerRegistration registration = registry.Values.Keys.Single(item => item.View == "32");
         registry.Values.Remove(registration);
         AssertTrue(!service.Inspect(state).IsApplied);
         registry.Values[registration] = 1;
@@ -38,7 +42,7 @@ internal static partial class TestSuite
         registry.Values[registration] = 0;
         AssertTrue(service.Inspect(state).IsApplied);
         state.VulkanBuild = RuntimeBuild.FullAddon;
-        AssertTrue(!service.Inspect(state).IsApplied);
+        AssertTrue(service.Inspect(state).IsApplied);
         state.VulkanBuild = RuntimeBuild.Standard;
 
         string originalManifest = File.ReadAllText(registration.Manifest);
@@ -61,7 +65,7 @@ internal static partial class TestSuite
         string stateBefore = JsonSerializer.Serialize(state, ManagerState.Json);
         string appsHash = FileTransaction.Hash(appsPath);
         VulkanInspection conflicting = service.Inspect(state);
-        AssertTrue(!conflicting.IsApplied && conflicting.Message.Contains("Another ReShade"));
+        AssertTrue(conflicting.IsApplied && conflicting.Message.Contains("existing shared"));
         AssertTrue(conflicting.Consumers.Count == 3 && conflicting.Consumers.Contains(discovered));
         AssertTrue(JsonSerializer.Serialize(state, ManagerState.Json) == stateBefore);
         AssertTrue(registry.Values.Count == 3 && registry.Values[competitor] == 0);
@@ -82,14 +86,14 @@ internal static partial class TestSuite
         var store = new StateStore(Path.Combine(directory, "manager"));
         var registry = new InMemoryLayerRegistry();
         using var manager = new Manager(store, registry);
-        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
+        await manager.InitializeAsync(Path.Combine(directory, "central"), None);
         await manager.ImportRuntimeAsync(
             Path.Combine(repositoryRoot, ".validation", "ReShade_Setup_6.8.0.exe"),
             Path.Combine(repositoryRoot, ".validation", "ReShade_Setup_6.8.0_Addon.exe"), None);
         string gameDirectory = Path.Combine(directory, "game");
         Directory.CreateDirectory(gameDirectory);
         string executable = Path.Combine(gameDirectory, "game.exe");
-        File.Copy(Path.Combine(runtimePayload, "Standard", "ReShade64.dll"), executable);
+        File.WriteAllBytes(executable, CreateExecutableWithImports(true, ["vulkan-1.dll"]));
         var game = new GameProfile { Executable = executable, Api = RenderApi.Vulkan };
         await manager.InstallAsync(game, None);
         AssertTrue(manager.InspectVulkan().IsApplied && manager.InspectVulkan().Consumers.Single() == executable);
@@ -102,13 +106,13 @@ internal static partial class TestSuite
 
         await manager.SetVulkanBuildAsync(RuntimeBuild.FullAddon, None);
         AssertTrue(manager.InspectVulkan().IsApplied && manager.InspectVulkan().Consumers.Single() == executable);
-        await manager.RemoveAsync(game.Id, None);
-        AssertTrue(!manager.InspectVulkan().IsApplied && manager.InspectVulkan().Consumers.Count == 0);
+        await manager.UnregisterAsync(game.Id, None);
+        AssertTrue(manager.InspectVulkan().IsApplied && manager.InspectVulkan().Consumers.Count == 0);
 
         await manager.SetVulkanBuildAsync(RuntimeBuild.Standard, None);
         string first = Path.Combine(directory, "first-external.exe");
         string second = Path.Combine(directory, "second-external.exe");
-        string apps = Path.Combine(manager.State!.Paths.StandardBinaries, "ReShadeApps.ini");
+        string apps = Path.Combine(manager.State!.VulkanLayerDirectory!, "ReShadeApps.ini");
         File.WriteAllText(apps, "Apps=" + IniDocument.Join([first, second]));
         AssertTrue(manager.InspectVulkan().Consumers.Count == 2);
         File.WriteAllText(apps, "Apps=" + IniDocument.Join([second]));

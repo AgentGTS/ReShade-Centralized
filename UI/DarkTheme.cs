@@ -111,11 +111,31 @@ internal static class DarkTheme
             ForeColor = Text,
             SelectionBackColor = Selection,
             SelectionForeColor = SystemInformation.HighContrast ? SystemColors.HighlightText : Text,
-            Padding = new Padding(12, 6, 8, 6)
+            Padding = new Padding(12, 2, 8, 2)
         };
         grid.AlternatingRowsDefaultCellStyle.BackColor = Surface;
-        grid.RowTemplate.Height = 42;
+        grid.RowTemplate.Height = grid.LogicalToDeviceUnits(30);
         grid.AllowUserToResizeRows = false;
+    }
+
+    public static void DrawCheckBox(Graphics graphics, Rectangle bounds, bool selected, bool locked, int strokeWidth)
+    {
+        Color fill = selected ? (locked ? Raised : Accent) : Input;
+        using var background = new SolidBrush(fill);
+        using var border = new Pen(locked ? Muted : Accent);
+        graphics.FillRectangle(background, bounds);
+        graphics.DrawRectangle(border, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
+        if (selected)
+        {
+            int size = bounds.Width;
+            using var tick = new Pen(locked ? Muted : OnAccent, strokeWidth);
+            graphics.DrawLines(tick,
+            [
+                new Point(bounds.Left + (size / 4), bounds.Top + (size / 2)),
+                new Point(bounds.Left + ((size * 7) / 16), bounds.Top + ((size * 11) / 16)),
+                new Point(bounds.Left + ((size * 3) / 4), bounds.Top + (size / 3))
+            ]);
+        }
     }
 
     private static void ApplyWindowChrome(Form form)

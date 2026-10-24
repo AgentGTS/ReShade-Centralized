@@ -63,7 +63,7 @@ internal static partial class TestSuite
         });
         var store = new StateStore(Path.Combine(directory, "manager"));
         using var manager = new Manager(store, new InMemoryLayerRegistry(), new Downloads(handler));
-        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
+        await manager.InitializeAsync(Path.Combine(directory, "central"), None);
         PackageUpdateReport report = await manager.UpdatePackagesWithReportAsync(packages, packages, null, None);
 
         AssertTrue(report.InstalledCount == 3 && report.FailedCount == 3, report.Summary);
@@ -74,7 +74,7 @@ internal static partial class TestSuite
         AssertTrue(report.Messages.Any(message => message.Contains("timed out")));
         AssertTrue(report.Messages.Any(message => message.Contains("Refresh catalog")));
         AssertTrue(report.Messages.Where(message => message.StartsWith("Failed "))
-            .All(message => message.Contains("Install / update selected")));
+            .All(message => message.Contains("Update selected")));
         AssertTrue(!Directory.EnumerateDirectories(store.Staging).Any());
     }
 
@@ -90,7 +90,7 @@ internal static partial class TestSuite
                 new(HttpStatusCode.ServiceUnavailable) : PackageResponse(archive));
         var store = new StateStore(Path.Combine(directory, "manager"));
         using var manager = new Manager(store, new InMemoryLayerRegistry(), new Downloads(handler));
-        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
+        await manager.InitializeAsync(Path.Combine(directory, "central"), None);
         await manager.UpdatePackagesAsync([existing], [existing], null, None);
         string shader = Path.Combine(manager.State!.Paths.Shaders, existing.Id, "Test.fx");
         string originalHash = FileTransaction.Hash(shader);
@@ -107,7 +107,7 @@ internal static partial class TestSuite
         report = await manager.UpdatePackagesWithReportAsync([existing, healthy], [existing, healthy], null, None);
         AssertTrue(report.InstalledCount == 1 && report.FailedCount == 1);
         AssertTrue(File.ReadAllText(shader) == "// local edits");
-        AssertTrue(report.Messages.Any(message => message.Contains("Back up your edits")));
+        AssertTrue(report.Messages.Any(message => message.Contains("Purge shader folder")));
     }
 
     private static async Task FailedDependenciesSkipOnlyAffectedPackagesAsync()
@@ -130,7 +130,7 @@ internal static partial class TestSuite
         });
         using var manager = new Manager(new StateStore(Path.Combine(directory, "manager")),
             new InMemoryLayerRegistry(), new Downloads(handler));
-        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
+        await manager.InitializeAsync(Path.Combine(directory, "central"), None);
         PackageUpdateReport report = await manager.UpdatePackagesWithReportAsync(
             [dependent, unrelated], catalog, null, None);
         AssertTrue(report.InstalledCount == 2 && report.FailedCount == 2);
@@ -171,7 +171,7 @@ internal static partial class TestSuite
         });
         var store = new StateStore(Path.Combine(directory, "manager"));
         using var manager = new Manager(store, new InMemoryLayerRegistry(), new Downloads(handler));
-        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
+        await manager.InitializeAsync(Path.Combine(directory, "central"), None);
         await AssertThrowsAsync<OperationCanceledException>(() => manager.UpdatePackagesWithReportAsync(
             packages, packages, null, cancellation.Token));
         AssertTrue(manager.State!.Packages.Single().Id == "a-completed");
@@ -199,7 +199,7 @@ internal static partial class TestSuite
             return PackageResponse(archive);
         });
         using var manager = new Manager(store, new InMemoryLayerRegistry(), new Downloads(handler));
-        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
+        await manager.InitializeAsync(Path.Combine(directory, "central"), None);
         try
         {
             PackageUpdateReport report = await manager.UpdatePackagesWithReportAsync(packages, packages, null, None);
@@ -233,17 +233,17 @@ internal static partial class TestSuite
         InvalidOperationException setup = await AssertThrowsAsync<InvalidOperationException>(
             () => manager.UpdatePackagesAsync([], [], null, None));
         AssertTrue(setup.Message.Contains("Setup"));
-        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
+        await manager.InitializeAsync(Path.Combine(directory, "central"), None);
         InvalidOperationException vulkan = await AssertThrowsAsync<InvalidOperationException>(
             () => manager.SetVulkanBuildAsync(RuntimeBuild.Standard, None));
         AssertTrue(vulkan.Message.Contains("Runtime & storage > Update ReShade"));
-        AssertTrue(!manager.State!.VulkanManaged && manager.State.OwnedRegistrations.Count == 0);
+        AssertTrue(!manager.State!.VulkanManaged && manager.State.VulkanLayerFiles.Count == 0);
 
         FileNotFoundException executable = await AssertThrowsAsync<FileNotFoundException>(
             () => manager.InstallAsync(new GameProfile { Name = "Missing game", Executable = "" }, None));
         AssertTrue(executable.Message.Contains("Games > Install game or Repair / edit"));
         string gameExecutable = Path.Combine(directory, "game.exe");
-        File.Copy(typeof(Manager).Assembly.Location, gameExecutable);
+        File.WriteAllBytes(gameExecutable, CreateExecutableWithImports(true, ["dxgi.dll"]));
         IOException runtime = await AssertThrowsAsync<IOException>(() => manager.InstallAsync(
             new GameProfile { Name = "No runtime", Executable = gameExecutable }, None));
         AssertTrue(runtime.Message.Contains("Runtime & storage > Update ReShade"));

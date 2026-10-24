@@ -29,7 +29,7 @@ internal static partial class TestSuite
         string[] invalid =
         [
             "", "1.0", "1.0.0.0", "01.0.0", "1.00.0", "1.0.01", "1.0.0-beta.01",
-            "1.0.0-", "1.0.0+", "1.0.0-beta..1", "1.0.0\n", "release-1.0.0", "1.0.0-β"
+            "1.0.0-", "1.0.0+", "1.0.0-beta..1", "1.0.0\n", "release-1.0.0", "1.0.0-Î²"
         ];
         foreach (string text in invalid)
         {

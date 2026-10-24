@@ -26,25 +26,34 @@ public enum CpuArchitecture
 public sealed class CentralPaths
 {
     public string Root { get; set; } = "";
-    public string Shaders { get; set; } = "";
-    public string Textures { get; set; } = "";
-    public string Profiles { get; set; } = "";
-    public string Screenshots { get; set; } = "";
-    public string StandardBinaries { get; set; } = "";
-    public string AddonBinaries { get; set; } = "";
+
+    [JsonIgnore]
+    public string ShaderRoot => Path.Combine(Root, "reshade-shaders");
+
+    [JsonIgnore]
+    public string Shaders => Path.Combine(ShaderRoot, "shaders");
+
+    [JsonIgnore]
+    public string Textures => Path.Combine(ShaderRoot, "textures");
+
+    [JsonIgnore]
+    public string Profiles => Path.Combine(Root, "presets");
+
+    [JsonIgnore]
+    public string Screenshots => Path.Combine(Root, "screenshots");
+
+    [JsonIgnore]
+    public string StandardBinaries => Path.Combine(Root, "reshade-files");
+
+    [JsonIgnore]
+    public string AddonBinaries => Path.Combine(Root, "reshade-files-mod");
 
     public static CentralPaths At(string root)
     {
         root = Path.GetFullPath(root);
         return new()
         {
-            Root = root,
-            Shaders = Path.Combine(root, "reshade-shaders", "shaders"),
-            Textures = Path.Combine(root, "reshade-shaders", "textures"),
-            Profiles = Path.Combine(root, "presets"),
-            Screenshots = Path.Combine(root, "screenshots"),
-            StandardBinaries = Path.Combine(root, "reshade-files"),
-            AddonBinaries = Path.Combine(root, "reshade-files-mod")
+            Root = root
         };
     }
 
@@ -58,7 +67,7 @@ public sealed class GameProfile
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Name { get; set; } = "";
-    public string? Executable { get; set; }
+    public string Executable { get; set; } = "";
 
     public RenderApi Api { get; set; }
 
@@ -71,15 +80,102 @@ public sealed class GameProfile
 }
 
 public sealed record OwnedLink(string Path, string Target);
+public sealed record VulkanAppEntry(string Path, string Executable);
 public sealed record ExistingInstallationNotice(string Message, bool BlocksInstallation);
+public sealed record InstallationLink(string Path, string Target, bool ReplacesFile, string? PreviousTarget = null);
+
+public sealed record InstallationPlan(
+    string GameDirectory,
+    string ProfileDirectory,
+    IReadOnlyList<InstallationLink> Links,
+    IReadOnlyList<string> RemovedLinks,
+    IReadOnlyList<string> LocalSearchPaths,
+    string? PresetSource,
+    string Fingerprint,
+    string? Conflict)
+{
+    public bool RequiresConfirmation => Links.Any(link => link.ReplacesFile);
+
+    public string Describe(bool includePaths = true)
+    {
+        string FileLabel(string path) => includePaths ? path : Path.GetFileName(path);
+        var lines = new List<string>();
+        foreach (InstallationLink link in Links)
+        {
+            string operation = "Link";
+            if (link.ReplacesFile)
+            {
+                operation = link.PreviousTarget == null ? "Replace file" : "Replace link";
+            }
+            if (includePaths)
+            {
+                string previous = link.PreviousTarget == null ? "" : $"\n  Current target: {link.PreviousTarget}";
+                lines.Add($"{operation}: {link.Path}{previous}\n  -> {link.Target}");
+            }
+            else
+            {
+                string destination = FileTransaction.Same(link.Target, Path.Combine(ProfileDirectory, "ReShade.ini"))
+                    ? "game profile" : "central runtime";
+                lines.Add($"{operation}: {FileLabel(link.Path)} -> {destination} ({FileLabel(link.Target)}).");
+            }
+        }
+
+        lines.AddRange(RemovedLinks.Select(path => "Remove managed link: " + FileLabel(path)));
+        if (PresetSource != null)
+        {
+            lines.Add(includePaths
+                ? $"Copy preset: {PresetSource}\n  -> {Path.Combine(ProfileDirectory, "ReShadePreset.ini")}"
+                : $"Copy preset: {FileLabel(PresetSource)} -> game profile (ReShadePreset.ini).");
+        }
+
+        lines.AddRange(LocalSearchPaths.Select(path => "Keep local shaders/textures: " +
+            (includePaths ? path : "reshade-shaders\\" + Path.GetFileName(path.TrimEnd('*', '\\', '/')))));
+        if (RequiresConfirmation)
+        {
+            lines.Add("Replaced files will be deleted. Files that existing links point to are kept. " +
+                "Unregister will not recover deleted files.");
+        }
+
+        if (Conflict != null)
+        {
+            string conflict = Conflict;
+            if (!includePaths)
+            {
+                string[] paths = DeploymentService.ProxyNames.Append("ReShade.ini")
+                    .Select(name => Path.Combine(GameDirectory, name))
+                    .Concat(Links.Select(link => link.Path)).Concat(RemovedLinks)
+                    .Distinct().OrderByDescending(path => path.Length).ToArray();
+                foreach (string path in paths)
+                {
+                    conflict = conflict.Replace(path, FileLabel(path), StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            lines.Add(conflict);
+        }
+
+        return string.Join("\n\n", lines);
+    }
+}
+
+public sealed class UnregisterResult
+{
+    public List<string> PreservedFiles { get; } = [];
+}
 
 public sealed class PackageUpdateReport
 {
     public int InstalledCount { get; internal set; }
+    public int RemovedCount { get; internal set; }
     public int FailedCount { get; internal set; }
     public List<string> Messages { get; } = [];
-    public string Summary => $"Shader packages: {InstalledCount} installed, {FailedCount} failed.";
+    public string Summary =>
+        $"Shader packages: {InstalledCount} installed/updated, {RemovedCount} removed, {FailedCount} failed.";
 }
+
+public sealed record ShaderSelectionPlan(
+    IReadOnlyList<ShaderPackage> Selected,
+    IReadOnlyList<InstalledPackage> Removals,
+    string Fingerprint);
 
 public sealed class InstalledPackage
 {
@@ -94,9 +190,8 @@ public sealed class InstalledPackage
 
 public sealed class ManagerState
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = StateStore.CurrentSchemaVersion;
     public CentralPaths Paths { get; set; } = new();
-    public string? ConfigurationTemplate { get; set; }
 
     public Dictionary<RuntimeBuild, string> RuntimeVersions { get; set; } = [];
     public Dictionary<string, string> RuntimeHashes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -107,8 +202,9 @@ public sealed class ManagerState
 
     public bool VulkanManaged { get; set; }
 
-    public List<string> ExternalVulkanApps { get; set; } = [];
-    public List<LayerRegistration> OwnedRegistrations { get; set; } = [];
+    public string? VulkanLayerDirectory { get; set; }
+    public Dictionary<string, string> VulkanLayerFiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<VulkanAppEntry> OwnedVulkanApps { get; set; } = [];
     public static JsonSerializerOptions Json { get; } = new()
     {
         WriteIndented = true,

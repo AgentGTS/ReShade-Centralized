@@ -4,12 +4,12 @@ namespace ReShadeCentralized.Tests;
 
 internal static partial class TestSuite
 {
-    private static async Task ExecutableNamesChangeWithoutMovingProfilesAsync()
+    private static async Task ExecutableChangesKeepProfilesAndPresetsAsync()
     {
         string directory = CreateTestDirectory("executable-names");
         var store = new StateStore(Path.Combine(directory, "manager"));
         using var manager = new Manager(store, new InMemoryLayerRegistry());
-        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
+        await manager.InitializeAsync(Path.Combine(directory, "central"), None);
         await manager.ImportRuntimeAsync(
             Path.Combine(repositoryRoot, ".validation", "ReShade_Setup_6.8.0.exe"),
             Path.Combine(repositoryRoot, ".validation", "ReShade_Setup_6.8.0_Addon.exe"),
@@ -19,8 +19,8 @@ internal static partial class TestSuite
         string executable = Path.Combine(folder, "game.exe");
         string replacement = Path.Combine(folder, "updated-game.exe");
         string runtime = Path.Combine(runtimePayload, "Standard", "ReShade64.dll");
-        File.Copy(runtime, executable);
-        File.Copy(runtime, replacement);
+        File.WriteAllBytes(executable, CreateExecutableWithImports(true, ["dxgi.dll"]));
+        File.WriteAllBytes(replacement, CreateExecutableWithImports(true, ["dxgi.dll"]));
         await manager.InstallAsync(new GameProfile { Executable = executable, Api = RenderApi.DXGI }, None);
         GameProfile installed = manager.State!.Games.Single();
         AssertTrue(installed.Name == "game.exe" && store.Load()!.Games.Single().Name == "game.exe");
@@ -35,12 +35,14 @@ internal static partial class TestSuite
         await manager.InstallAsync(request, None);
         installed = manager.State.Games.Single();
         AssertTrue(installed.Name == "updated-game.exe" && installed.Id == id);
-        AssertTrue(installed.Directory == profileDirectory && File.ReadAllText(preset) == "Custom preset contents");
+        AssertTrue(installed.Directory == profileDirectory && Directory.Exists(profileDirectory) &&
+            Path.GetFileName(installed.Directory) == "game_" + id &&
+            File.ReadAllText(Path.Combine(installed.Directory, "ReShadePreset.ini")) == "Custom preset contents");
         AssertTrue(store.Load()!.Games.Single().Name == "updated-game.exe");
         AssertTrue(installed.Links.All(DeploymentService.IsOwnedLink));
     }
 
-    private static Task UnmanagedInstallationDetectionPreservesBackupsAsync()
+    private static Task UnmanagedInstallationReviewAndUnregisterPreserveUserFilesAsync()
     {
         string directory = CreateTestDirectory("unmanaged-installation");
         ManagerState state = CreateState(Path.Combine(directory, "central"));
@@ -80,8 +82,9 @@ internal static partial class TestSuite
         string backup;
         using (var transaction = new FileTransaction(backups, "Adopt unmanaged ReShade"))
         {
-            backup = transaction.BackupDirectory;
-            DeploymentService.Install(state, game, transaction);
+            backup = transaction.RecoveryDirectory;
+            DeploymentService.Install(state, game, transaction, reviewedPlan: DeploymentService.CreatePlan(state, game),
+                replaceExisting: true);
             transaction.Commit();
         }
 
@@ -92,9 +95,15 @@ internal static partial class TestSuite
         File.Copy(runtime, proxy);
         notice = DeploymentService.InspectExistingInstallation(executable, RenderApi.DXGI, game.Links);
         AssertTrue(notice!.BlocksInstallation && notice.Message.Contains("changed outside this app"));
-        FileTransaction.Restore(backup, null);
+        AssertTrue(!Directory.Exists(backup));
+        using (var transaction = new FileTransaction(backups, "unregister"))
+        {
+            UnregisterResult result = DeploymentService.Remove(game, transaction);
+            AssertTrue(result.PreservedFiles.Single() == proxy);
+            transaction.Commit();
+        }
         AssertTrue(FileTransaction.Link(proxy) == null && FileTransaction.Hash(proxy) == proxyHash);
-        AssertTrue(FileTransaction.Link(config) == null && File.ReadAllText(config) == originalConfig);
+        AssertTrue(!FileTransaction.Exists(config));
         AssertTrue(File.Exists(localShader));
         return Task.CompletedTask;
     }
@@ -151,16 +160,15 @@ internal static partial class TestSuite
         string backup;
         using (var transaction = new FileTransaction(backups, "migrate", registry))
         {
-            backup = transaction.BackupDirectory;
+            backup = transaction.RecoveryDirectory;
             service.Enable(state, transaction);
             transaction.Commit();
         }
 
-        AssertTrue(state.ExternalVulkanApps.Count == 2 && state.OwnedRegistrations.Count == 2 &&
-            registry.Read(old64) == null &&
-            registry.Read(old32) == null);
+        AssertTrue(state.VulkanLayerFiles.Count == 0 && registry.Values.Count == 2 &&
+            registry.Read(old64) == 0 && registry.Read(old32) == 0);
         AssertTrue(registry.Values.Keys.All(registration =>
-            registration.Manifest.StartsWith(state.Paths.StandardBinaries)));
+            registration.Manifest.StartsWith(old)));
         using (var transaction = new FileTransaction(backups, "switch", registry))
         {
             state.VulkanBuild = RuntimeBuild.FullAddon;
@@ -168,9 +176,9 @@ internal static partial class TestSuite
         }
 
         AssertTrue(registry.Values.Keys.All(registration =>
-            registration.Manifest.StartsWith(state.Paths.StandardBinaries)));
-        FileTransaction.Restore(backup, registry);
-        AssertTrue(registry.Values.Count == 2 && registry.Read(old64) == 0 && registry.Read(old32) == 0);
+            registration.Manifest.StartsWith(old)));
+        AssertTrue(!Directory.Exists(backup));
+        AssertTrue(File.Exists(old64.Manifest) && File.Exists(old32.Manifest));
         return Task.CompletedTask;
     }
 
@@ -189,22 +197,20 @@ internal static partial class TestSuite
             transaction.Commit();
         }
 
-        state.ExternalVulkanApps.Add(@"C:\keep.exe");
         using (var transaction = new FileTransaction(Path.Combine(directory, "backups"), "retain", registry))
         {
-            service.RemoveIfUnused(state, transaction);
+            service.WriteApps(state, transaction);
             transaction.Commit();
         }
 
         AssertTrue(state.VulkanManaged && registry.Values.Count == 3);
-        state.ExternalVulkanApps.Clear();
         using (var transaction = new FileTransaction(Path.Combine(directory, "backups"), "remove", registry))
         {
-            service.RemoveIfUnused(state, transaction);
+            service.WriteApps(state, transaction);
             transaction.Commit();
         }
 
-        AssertTrue(!state.VulkanManaged && registry.Values.Count == 1 && registry.Read(other) == 1);
+        AssertTrue(state.VulkanManaged && registry.Values.Count == 3 && registry.Read(other) == 1);
         return Task.CompletedTask;
     }
 
@@ -238,8 +244,8 @@ internal static partial class TestSuite
             transaction.Commit();
         }
 
-        AssertTrue(state.ExternalVulkanApps.Contains(@"C:\new-game.exe") && registry.Read(entry) == null &&
-            registry.Values.Count == 2);
+        AssertTrue(service.Inspect(state).Consumers.Contains(@"C:\new-game.exe") && registry.Read(entry) == 0 &&
+            registry.Values.Count == 3);
         return Task.CompletedTask;
     }
 
@@ -271,7 +277,7 @@ internal static partial class TestSuite
         string gameDir = Path.Combine(directory, "game");
         Directory.CreateDirectory(gameDir);
         string executablePath = Path.Combine(gameDir, "game.exe");
-        File.Copy(Path.Combine(runtimePayload, "Standard", "ReShade64.dll"), executablePath);
+        File.WriteAllBytes(executablePath, CreateExecutableWithImports(true, ["dxgi.dll"]));
         var game = new GameProfile
         {
             Name = "Test",
@@ -328,41 +334,6 @@ internal static partial class TestSuite
         return Task.CompletedTask;
     }
 
-    private static async Task ManagerRelocationRepairsLinksAndPreservesOriginalDataAsync()
-    {
-        string directory = CreateTestDirectory("manager-relocate");
-        var store = new StateStore(directory);
-        var registry = new InMemoryLayerRegistry();
-        using var manager = new Manager(store, registry);
-        await manager.InitializeAsync(Path.Combine(directory, "central"), null, None);
-        await manager.ImportRuntimeAsync(
-            Path.Combine(repositoryRoot, ".validation", "ReShade_Setup_6.8.0.exe"),
-            Path.Combine(repositoryRoot, ".validation", "ReShade_Setup_6.8.0_Addon.exe"),
-            None);
-        string gameDir = Path.Combine(directory, "game");
-        Directory.CreateDirectory(gameDir);
-        string executablePath = Path.Combine(gameDir, "game.exe");
-        File.Copy(Path.Combine(runtimePayload, "Standard", "ReShade64.dll"), executablePath);
-        await manager.InstallAsync(new()
-        {
-            Name = "Relocation",
-            Executable = executablePath,
-            Api = RenderApi.DXGI
-        }, None);
-        string old = manager.State!.Paths.Root;
-        await manager.RelocateAsync(Path.Combine(directory, "destination"), None);
-        AssertTrue(manager.State.Games.Single().Links.All(DeploymentService.IsOwnedLink));
-        AssertTrue(FileTransaction.Hash(Path.Combine(
-                    manager.State.Paths.StandardBinaries,
-                    "ReShade64.dll")) == manager.State.RuntimeHashes[Path.Combine(
-                manager.State.Paths.StandardBinaries,
-                "ReShade64.dll")]);
-        string relocation = Directory.GetDirectories(store.Backups).OrderDescending().First();
-        await manager.RestoreToAsync(relocation, None);
-        AssertTrue(manager.State!.Paths.Root == old &&
-            manager.State.Games.Single().Links.All(DeploymentService.IsOwnedLink));
-    }
-
     private static Task GameLinksTargetCorrectArchitecturesAndBuildsAsync()
     {
         string directory = CreateTestDirectory("architectures");
@@ -375,7 +346,7 @@ internal static partial class TestSuite
             Directory.CreateDirectory(folder);
             string executablePath = Path.Combine(folder, "game.exe");
             string stem = architecture == CpuArchitecture.X86 ? "ReShade32.dll" : "ReShade64.dll";
-            File.Copy(Path.Combine(runtimePayload, "Standard", stem), executablePath);
+            File.WriteAllBytes(executablePath, CreateExecutableWithImports(architecture == CpuArchitecture.X64, ["opengl32.dll"]));
             var game = new GameProfile
             {
                 Executable = executablePath,

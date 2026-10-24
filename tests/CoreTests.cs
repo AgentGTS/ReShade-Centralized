@@ -18,7 +18,7 @@ internal static partial class TestSuite
         ExistingInstallationNotice? notice = DeploymentService.InspectExistingInstallation(
             executable, RenderApi.Vulkan, []);
         AssertTrue(notice != null && !notice.BlocksInstallation);
-        AssertTrue(notice!.Message.Contains("back up and replace") && notice.Message.Contains("reshade-shaders"));
+        AssertTrue(notice!.Message.Contains("after confirmation") && notice.Message.Contains("reshade-shaders"));
         AssertTrue(File.ReadAllText(config) == original && Directory.Exists(shaders));
         AssertTrue(DeploymentService.InspectExistingInstallation(
             Path.Combine(directory, "missing.exe"), RenderApi.DXGI, []) == null);
@@ -72,7 +72,7 @@ internal static partial class TestSuite
         return Task.CompletedTask;
     }
 
-    private static Task FileTransactionRollsBackAndRestoresCommittedBackupAsync()
+    private static Task FileTransactionRollsBackAndDiscardsRecoveryAsync()
     {
         string directory = CreateTestDirectory("transaction");
         string file = Path.Combine(directory, "one");
@@ -92,36 +92,32 @@ internal static partial class TestSuite
             File.ReadAllText(removed) == "retain");
         using (var transaction = new FileTransaction(Path.Combine(directory, "backups"), "commit"))
         {
-            backup = transaction.BackupDirectory;
+            backup = transaction.RecoveryDirectory;
             transaction.WriteText(file, "committed");
             transaction.Commit();
         }
 
-        FileTransaction.Restore(backup, null);
-        AssertTrue(File.ReadAllText(file) == "original");
+        AssertTrue(!Directory.Exists(backup) && File.ReadAllText(file) == "committed");
         return Task.CompletedTask;
     }
 
-    private static Task RestoreRejectsTamperedBackupsBeforeChangingFilesAsync()
+    private static Task RollbackRejectsTamperedRecoveryBeforeChangingFilesAsync()
     {
         string directory = CreateTestDirectory("tamper");
         string file = Path.Combine(directory, "file");
         string backup;
         File.WriteAllText(file, "original");
-        using (var transaction = new FileTransaction(Path.Combine(directory, "backups"), "tamper"))
-        {
-            backup = transaction.BackupDirectory;
-            transaction.WriteText(file, "new");
-            transaction.Commit();
-        }
+        var transaction = new FileTransaction(Path.Combine(directory, "backups"), "tamper");
+        backup = transaction.RecoveryDirectory;
+        transaction.WriteText(file, "new");
 
         File.WriteAllText(Directory.GetFiles(backup, "*.bak").Single(), "tampered");
-        AssertThrows<InvalidDataException>(() => FileTransaction.Restore(backup, null));
+        AssertThrows<InvalidDataException>(() => FileTransaction.Rollback(backup, null));
         AssertTrue(File.ReadAllText(file) == "new");
         return Task.CompletedTask;
     }
 
-    private static Task RestoreRejectsLockedDestinationsBeforeChangingFilesAsync()
+    private static Task RollbackRejectsLockedDestinationsBeforeChangingFilesAsync()
     {
         string directory = CreateTestDirectory("restore-lock");
         string one = Path.Combine(directory, "one");
@@ -129,21 +125,18 @@ internal static partial class TestSuite
         string backup;
         File.WriteAllText(one, "old-one");
         File.WriteAllText(two, "old-two");
-        using (var transaction = new FileTransaction(Path.Combine(directory, "backups"), "commit"))
-        {
-            backup = transaction.BackupDirectory;
-            transaction.WriteText(one, "new-one");
-            transaction.WriteText(two, "new-two");
-            transaction.Commit();
-        }
+        using var transaction = new FileTransaction(Path.Combine(directory, "backups"), "pending");
+        backup = transaction.RecoveryDirectory;
+        transaction.WriteText(one, "new-one");
+        transaction.WriteText(two, "new-two");
 
         using (var locked = new FileStream(one, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            AssertThrows<IOException>(() => FileTransaction.Restore(backup, null));
+            AssertThrows<IOException>(() => FileTransaction.Rollback(backup, null));
             AssertTrue(File.ReadAllText(two) == "new-two");
         }
 
-        FileTransaction.Restore(backup, null);
+        FileTransaction.Rollback(backup, null);
         AssertTrue(File.ReadAllText(one) == "old-one" && File.ReadAllText(two) == "old-two");
         return Task.CompletedTask;
     }
@@ -161,7 +154,6 @@ internal static partial class TestSuite
         transaction.SetRegistry(key, 0);
         FileTransaction.RecoverPending(Path.Combine(directory, "backups"), registry);
         AssertTrue(File.ReadAllText(file) == "old" && registry.Read(key) == 1);
-        transaction.Dispose();
         return Task.CompletedTask;
     }
 
@@ -190,9 +182,9 @@ internal static partial class TestSuite
         string directory = CreateTestDirectory("partial-event");
         string file = Path.Combine(directory, "file");
         File.WriteAllText(file, "old");
-        using var transaction = new FileTransaction(Path.Combine(directory, "backups"), "partial append");
+        var transaction = new FileTransaction(Path.Combine(directory, "backups"), "partial append");
         transaction.WriteText(file, "new");
-        File.AppendAllText(Path.Combine(transaction.BackupDirectory, "events.jsonl"), "{\"File\":");
+        File.AppendAllText(Path.Combine(transaction.RecoveryDirectory, "events.jsonl"), "{\"File\":");
         FileTransaction.RecoverPending(Path.Combine(directory, "backups"), new InMemoryLayerRegistry());
         AssertTrue(File.ReadAllText(file) == "old");
         return Task.CompletedTask;
@@ -350,31 +342,6 @@ internal static partial class TestSuite
         return Task.CompletedTask;
     }
 
-    private static Task LegacyImportPreservesProfilesAndCustomPathsAsync()
-    {
-        string directory = CreateTestDirectory("legacy");
-        string central = Path.Combine(directory, "central");
-        string profiles = Path.Combine(directory, "custom-profiles");
-        Directory.CreateDirectory(Path.Combine(profiles, "Game"));
-        string config = Path.Combine(profiles, "Game", "ReShade.ini");
-        File.WriteAllText(config, "[GENERAL]\nCustom=keep\n");
-        File.WriteAllText(Path.Combine(profiles, "Game", "ReShadePreset.ini"), "preset-data");
-        string sharedInclude = Path.Combine(directory, "shared.fxh");
-        File.WriteAllText(sharedInclude, "custom include");
-        File.CreateSymbolicLink(Path.Combine(profiles, "Game", "helper.fxh"), sharedInclude);
-        string legacy = Path.Combine(directory, "ReShadeCentralized.ini");
-        File.WriteAllText(
-            legacy,
-            "[paths]\npresets=" + profiles + "\ndlls=" + Path.Combine(directory, "custom-dlls") + "\n");
-        using var transaction = new FileTransaction(Path.Combine(directory, "backups"), "import");
-        ManagerState state = MigrationService.Create(central, legacy, transaction);
-        transaction.Commit();
-        AssertTrue(state.Paths.Profiles == profiles && state.Games.Single().Executable == null &&
-            File.ReadAllText(config).Contains("Custom=keep"));
-        AssertTrue(state.Paths.StandardBinaries == Path.Combine(directory, "custom-dlls"));
-        return Task.CompletedTask;
-    }
-
     private static Task ConfigurationRefreshPreservesCustomSettingsAndPresetsAsync()
     {
         string directory = CreateTestDirectory("config");
@@ -383,7 +350,8 @@ internal static partial class TestSuite
         ManagerState state = CreateState(Path.Combine(directory, "central"));
         var game = new GameProfile
         {
-            Directory = profile
+            Directory = profile,
+            Executable = Path.Combine(directory, "game.exe")
         };
         File.WriteAllText(
             Path.Combine(profile, "ReShade.ini"),
@@ -422,56 +390,15 @@ internal static partial class TestSuite
             requested!.Contains("AgentGTS/ReShade-Centralized"));
     }
 
-    private static Task RelocationRemapsPresetAndIncludePathsAsync()
-    {
-        string directory = CreateTestDirectory("custom-relocate");
-        string backups = Path.Combine(directory, "backups");
-        ManagerState state = CreateState(Path.Combine(directory, "central"));
-        foreach (string path in state.Paths.Directories())
-        {
-            Directory.CreateDirectory(path);
-        }
-
-        var game = new GameProfile
-        {
-            Name = "Legacy",
-            Directory = Path.Combine(state.Paths.Profiles, "profile")
-        };
-        state.Games.Add(game);
-        Directory.CreateDirectory(game.Directory);
-        File.WriteAllText(Path.Combine(game.Directory, "Alternate.ini"), "preset");
-        File.WriteAllText(
-            ConfigurationService.ConfigPath(game),
-            "[INSTALL]\nBasePath=" + game.Directory +
-            "\n[GENERAL]\nPresetPath=.\\Alternate.ini\nEffectSearchPaths=" + Path.Combine(
-                state.Paths.Shaders,
-                "custom",
-                "**") +
-            "\n");
-        using var transaction = new FileTransaction(backups, "custom relocate");
-        MigrationService.Relocate(state, Path.Combine(directory, "new"), transaction, None);
-        transaction.Commit();
-        var document = IniDocument.Read(ConfigurationService.ConfigPath(game));
-        AssertTrue(IniDocument.Split(document.Get("GENERAL", "PresetPath"))
-            .Single() == Path.Combine(
-                game.Directory,
-                "Alternate.ini"));
-        AssertTrue(IniDocument.Split(document.Get("GENERAL", "EffectSearchPaths"))
-            .Contains(Path.Combine(
-                    state.Paths.Shaders,
-                    "custom",
-                    "**")));
-        return Task.CompletedTask;
-    }
-
-    private static async Task ManagerRestoreRevertsNewerTransactionsFirstAsync()
+    private static async Task ManagerCommittedOperationsLeaveNoHistoryAsync()
     {
         var store = new StateStore(CreateTestDirectory("manager-restore"));
         using var manager = new Manager(store, new InMemoryLayerRegistry());
-        await manager.InitializeAsync(Path.Combine(store.DirectoryPath, "central"), null, None);
-        string init = Directory.GetDirectories(store.Backups).Single();
-        await manager.RelocateAsync(Path.Combine(store.DirectoryPath, "relocated"), None);
-        await manager.RestoreToAsync(init, None);
-        AssertTrue(manager.State == null && !File.Exists(store.StatePath));
+        await manager.InitializeAsync(Path.Combine(store.DirectoryPath, "central"), None);
+        await AssertThrowsAsync<InvalidOperationException>(() =>
+            manager.InitializeAsync(Path.Combine(store.DirectoryPath, "other"), None));
+        AssertTrue(!Directory.EnumerateFileSystemEntries(store.Recovery).Any());
+        AssertTrue(!Directory.Exists(Path.Combine(store.DirectoryPath, "Backups")));
+        AssertTrue(manager.State != null && File.Exists(store.StatePath));
     }
 }

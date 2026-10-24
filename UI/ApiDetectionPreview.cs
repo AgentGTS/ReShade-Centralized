@@ -23,7 +23,8 @@ internal static partial class UiPreview
         dialog.Opacity = 0;
         dialog.ShowInTaskbar = false;
         dialog.Show();
-        TextBox executable = Descendants(dialog).OfType<TextBox>().Single();
+        TextBox executable = Descendants(dialog).OfType<TextBox>()
+            .Single(control => control.AccessibleName == "Game executable");
         ComboBox api = Descendants(dialog).OfType<ComboBox>()
             .Single(control => control.Items.Contains(RenderApi.Vulkan));
         ComboBox build = Descendants(dialog).OfType<ComboBox>()
@@ -197,7 +198,8 @@ internal static partial class UiPreview
                 dialog.Opacity = 0;
                 dialog.ShowInTaskbar = false;
                 dialog.Show();
-                TextBox executable = Descendants(dialog).OfType<TextBox>().Single();
+                TextBox executable = Descendants(dialog).OfType<TextBox>()
+                    .Single(control => control.AccessibleName == "Game executable");
                 executable.Text = executablePath;
                 ComboBox api = Descendants(dialog).OfType<ComboBox>()
                     .Single(control => control.Items.Contains(RenderApi.OpenGL));
@@ -266,7 +268,8 @@ internal static partial class UiPreview
                 });
                 dialog.Opacity = 0;
                 dialog.ShowInTaskbar = false;
-                TextBox executable = Descendants(dialog).OfType<TextBox>().Single();
+                TextBox executable = Descendants(dialog).OfType<TextBox>()
+                    .Single(control => control.AccessibleName == "Game executable");
                 executable.Text = executablePath;
                 ComboBox api = Descendants(dialog).OfType<ComboBox>()
                     .Single(control => control.Items.Contains(RenderApi.Vulkan));
@@ -307,7 +310,8 @@ internal static partial class UiPreview
 
         using var failed = new GameDialog(RuntimeBuild.Standard, apiDetector: (_, _) =>
             Task.FromException<RenderApi?>(new InvalidDataException("Injected advisory failure.")));
-        Descendants(failed).OfType<TextBox>().Single().Text = executablePath;
+        Descendants(failed).OfType<TextBox>()
+            .Single(control => control.AccessibleName == "Game executable").Text = executablePath;
         foreach (ComboBox selection in Descendants(failed).OfType<ComboBox>())
         {
             selection.SelectedIndex = 1;
@@ -387,7 +391,8 @@ internal static partial class UiPreview
         dialog.Opacity = 0;
         dialog.ShowInTaskbar = false;
         dialog.Show();
-        TextBox executable = Descendants(dialog).OfType<TextBox>().Single();
+        TextBox executable = Descendants(dialog).OfType<TextBox>()
+            .Single(control => control.AccessibleName == "Game executable");
         foreach (ComboBox selection in Descendants(dialog).OfType<ComboBox>())
         {
             selection.SelectedIndex = 1;
@@ -401,7 +406,7 @@ internal static partial class UiPreview
             executable.Text = path;
             VerifyButtonStates(dialog, false, "Install");
             Label warning = Descendants(dialog).OfType<Label>()
-                .Single(control => control.AccessibleName == "Existing ReShade installation");
+                .Single(control => control.AccessibleName == "Installation changes");
             if (warning.Visible)
             {
                 throw new InvalidOperationException("Invalid executable paths must not inspect neighboring ReShade files.");

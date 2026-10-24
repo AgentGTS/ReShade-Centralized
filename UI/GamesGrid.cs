@@ -7,7 +7,16 @@ internal sealed class GamesGrid : DataGridView
         DoubleBuffered = true;
         AutoGenerateColumns = false;
         AddColumn("Id", "Id").Visible = false;
-        AddColumn("Name", "Game");
+        DataGridViewColumn status = AddColumn("InstallationWarning", "");
+        status.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+        status.Width = LogicalToDeviceUnits(24);
+        status.Resizable = DataGridViewTriState.False;
+        status.SortMode = DataGridViewColumnSortMode.NotSortable;
+        status.DefaultCellStyle.Padding = Padding.Empty;
+        ShowCellToolTips = true;
+        DataGridViewColumn name = AddColumn("Name", "Game");
+        name.DefaultCellStyle.Padding = new Padding(4, 2, 8, 2);
+        name.HeaderCell.Style.Padding = new Padding(4, 0, 8, 0);
         AddColumn("API", "API");
         AddColumn("Build", "Build");
         AddColumn("Architecture", "Arch.");
@@ -24,6 +33,41 @@ internal sealed class GamesGrid : DataGridView
         };
         Columns.Add(column);
         return column;
+    }
+
+    protected override void OnCellPainting(DataGridViewCellPaintingEventArgs e)
+    {
+        base.OnCellPainting(e);
+        if (e.RowIndex < 0 || e.ColumnIndex != Columns["InstallationWarning"]?.Index)
+        {
+            return;
+        }
+
+        e.Paint(e.ClipBounds, e.PaintParts & ~DataGridViewPaintParts.ContentForeground);
+        if (e.Value is string { Length: > 0 })
+        {
+            int size = LogicalToDeviceUnits(16);
+            var bounds = new Rectangle(e.CellBounds.Left + ((e.CellBounds.Width - size) / 2),
+                e.CellBounds.Top + ((e.CellBounds.Height - size) / 2), size, size);
+            e.Graphics?.DrawIcon(SystemIcons.Warning, bounds);
+        }
+
+        e.Handled = true;
+    }
+
+    protected override void OnDataBindingComplete(DataGridViewBindingCompleteEventArgs e)
+    {
+        base.OnDataBindingComplete(e);
+        if (Columns["InstallationWarning"] is not { } column)
+        {
+            return;
+        }
+
+        foreach (DataGridViewRow row in Rows)
+        {
+            DataGridViewCell cell = row.Cells[column.Index];
+            cell.ToolTipText = cell.Value as string ?? "";
+        }
     }
 
     protected override void OnPaint(PaintEventArgs e)

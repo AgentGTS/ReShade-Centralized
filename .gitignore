@@ -349,8 +349,11 @@ AGENTS.md
 .validation/
 artifacts/
 Backups/
+Recovery/
+Recovery-v2/
 Staging/
 ReShadeCentralized.json
+CentralStorage.txt
 ReShadeCentralized.ini
 ReShade_Template.ini
 CatalogCache.ini*

@@ -4,6 +4,7 @@ internal sealed class InMemoryLayerRegistry : ILayerRegistry
 {
     public Dictionary<LayerRegistration, int> Values { get; } = [];
     public int? FailWrite { get; set; }
+    public List<(LayerRegistration Registration, int? Value)> WriteHistory { get; } = [];
 
     private int writes;
 
@@ -13,6 +14,7 @@ internal sealed class InMemoryLayerRegistry : ILayerRegistry
 
     public void Write(LayerRegistration key, int? value)
     {
+        WriteHistory.Add((key, value));
         if (++writes == FailWrite)
         {
             throw new IOException("Injected registry failure.");

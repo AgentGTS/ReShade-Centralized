@@ -85,6 +85,67 @@ internal static partial class TestSuite
         testRoot = Path.Combine(repositoryRoot, ".validation", "tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(testRoot);
         Console.WriteLine("Isolated test workspace: " + testRoot);
+        await RunTestAsync("Shader selection installs, updates, removes custom package files and rechecks review",
+            ShaderSelectionInstallsUpdatesAndRemovesAsync);
+        await RunTestAsync("Failed removals retain required dependencies and unchecked intent across restart",
+            ShaderRemovalFailureRetainsDependenciesAndIntentAsync);
+        await RunTestAsync("Canceled removals preserve committed operations and saved selection intent",
+            ShaderRemovalCancellationPreservesCompletedChangesAsync);
+        await RunTestAsync("Selection migration protects installed packages and add-on paths use one directory",
+            ShaderSelectionMigrationAndAddonPathsAsync);
+        await RunTestAsync("Shader package removal refuses linked and unsafe folders",
+            ShaderRemovalRejectsLinkedFoldersAsync);
+        await RunTestAsync(
+            "Central format upgrades repair metadata while preserving profiles and unrelated files",
+            CentralStateMigrationRepairsRecoverableSettingsAsync);
+        await RunTestAsync(
+            "Central storage recovers profile identity, version markers and editable JSON syntax",
+            CentralStateMigrationRecoversProfileIdentityAsync);
+        await RunTestAsync(
+            "Unrecoverable, ambiguous and future settings remain untouched",
+            CentralStateMigrationPreservesUnrecoverableDataAsync);
+        await RunTestAsync(
+            "Storage migration rolls back failed saves and recovers interrupted operations",
+            CentralStateMigrationSaveFailureAndRecoveryAsync);
+        await RunTestAsync(
+            "Existing ReShade symlinks retain protection for unrelated hooks and other APIs",
+            SymlinkAdoptionProtectsUnrelatedHooksAsync);
+        await RunTestAsync(
+            "Default storage is offered with reset guidance and missing folders are recreated",
+            DefaultStorageOffersFreshSetupGuidanceAsync);
+        await RunTestAsync(
+            "Central storage reopens after deleting the app and recovers interrupted changes",
+            CentralStorageSurvivesApplicationDeletionAsync);
+        await RunTestAsync(
+            "Storage selection rejects unsafe or invalid folders without changing state or the pointer",
+            StorageSelectionRejectsInvalidFoldersAsync);
+        await RunTestAsync(
+            "Unavailable storage and pointer failures allow recovery through setup",
+            StoragePointerFailuresRemainRecoverableAsync);
+        await RunTestAsync(
+            "Fresh beta setup ignores old assets and uses one storage layout",
+            FreshBetaSetupIgnoresOldAssetsAsync);
+        await RunTestAsync(
+            "Incompatible beta formats require fresh setup without rewriting state",
+            IncompatibleBetaStateRequiresFreshSetupAsync);
+        await RunTestAsync(
+            "Current state recovers missing link records and rejects unknown executable paths",
+            CurrentBetaStateRequiresCompleteProfilesAsync);
+        await RunTestAsync(
+            "Installation health finds deleted, retargeted and identical-file replacements without changing files",
+            InstallationHealthDetectsMissingAndReplacedLinksAsync);
+        await RunTestAsync(
+            "Installation health checks hook links and flags incomplete profiles",
+            InstallationHealthChecksHooksAndUnconfiguredProfilesAsync);
+        await RunTestAsync(
+            "Installation review requires consent and rejects changed files",
+            InstallationReviewRequiresConsentAndRejectsChangesAsync);
+        await RunTestAsync(
+            "Preset review rejects unreadable or changed selections",
+            ReviewRejectsUnreadableAndChangedPresetsAsync);
+        await RunTestAsync(
+            "Recovery cleanup failures preserve committed changes",
+            RecoveryCleanupFailureDoesNotUndoCommitAsync);
         await RunTestAsync(
             "Graphics API detection reads x86/x64 normal and delay imports and leaves ambiguous APIs unresolved",
             GraphicsApiDetectionFindsOnlyUnambiguousImportsAsync);
@@ -107,18 +168,20 @@ internal static partial class TestSuite
             "INI preserves sections, unknown settings, comments, and escaped commas",
             IniPreservesCustomSettingsAndEscapedCommasAsync);
         await RunTestAsync(
-            "File transaction rolls back overwrite, creation, deletion; committed backup restores",
-            FileTransactionRollsBackAndRestoresCommittedBackupAsync);
+            "File transaction rolls back failures and discards committed recovery data",
+            FileTransactionRollsBackAndDiscardsRecoveryAsync);
         await RunTestAsync(
-            "Backup tampering is rejected before any destination changes",
-            RestoreRejectsTamperedBackupsBeforeChangingFilesAsync);
+            "Recovery tampering is rejected before any destination changes",
+            RollbackRejectsTamperedRecoveryBeforeChangingFilesAsync);
         await RunTestAsync(
-            "Restore preflights locked destinations before reverting other files",
-            RestoreRejectsLockedDestinationsBeforeChangingFilesAsync);
+            "Rollback preflights locked destinations before reverting other files",
+            RollbackRejectsLockedDestinationsBeforeChangingFilesAsync);
         await RunTestAsync(
             "Interrupted pending transaction recovers files and registry",
             InterruptedPendingTransactionRecoversFilesAndRegistryAsync);
-        await RunTestAsync("Registry failure restores earlier writes", RegistryFailureRestoresEarlierWritesAsync);
+        await RunTestAsync(
+            "Registry failure restores earlier writes",
+            RegistryFailureRestoresEarlierWritesAsync);
         await RunTestAsync(
             "Crash recovery ignores an unfinished final journal append",
             CrashRecoveryIgnoresIncompleteJournalEntriesAsync);
@@ -153,6 +216,15 @@ internal static partial class TestSuite
             "Failed downloads, timeouts, and corrupt archives do not block healthy shader packages",
             PackageFailuresDoNotBlockHealthyDownloadsAsync);
         await RunTestAsync(
+            "Shader folder purge resolves unmanaged package conflicts and preserves game data and choices",
+            ShaderPurgeResolvesUnmanagedPackageConflictsAsync);
+        await RunTestAsync(
+            "Shader purge failures roll back files and inventory; cancellation leaves them intact",
+            ShaderPurgeRollsBackFailuresAndHonorsCancellationAsync);
+        await RunTestAsync(
+            "Shader purge refuses linked folders and files without changing external data",
+            ShaderPurgeRejectsLinkedDirectoriesAndFilesAsync);
+        await RunTestAsync(
             "Failed package updates preserve previous files and local edits while other packages install",
             FailedPackageUpdatesPreserveExistingFilesAndLocalEditsAsync);
         await RunTestAsync(
@@ -167,9 +239,6 @@ internal static partial class TestSuite
         await RunTestAsync(
             "Out-of-order actions identify the missing setup step and the control used to fix it",
             OutOfOrderActionsExplainRecoveryAsync);
-        await RunTestAsync(
-            "Legacy import retains custom paths, profiles, presets and marks executable unknown",
-            LegacyImportPreservesProfilesAndCustomPathsAsync);
         await RunTestAsync(
             "Configuration refresh retains depth, custom settings, custom search paths and preset",
             ConfigurationRefreshPreservesCustomSettingsAndPresetsAsync);
@@ -186,11 +255,8 @@ internal static partial class TestSuite
             "Release checks paginate and preserve HTTP failures and cancellation",
             ReleaseCheckPaginatesAndPreservesFailuresAsync);
         await RunTestAsync(
-            "Relocation remaps a custom active preset and include paths within managed storage",
-            RelocationRemapsPresetAndIncludePathsAsync);
-        await RunTestAsync(
-            "Manager restore undoes newer transactions before restoring the chosen state",
-            ManagerRestoreRevertsNewerTransactionsFirstAsync);
+            "Manager commits operations without keeping backup history",
+            ManagerCommittedOperationsLeaveNoHistoryAsync);
         string installers = Path.Combine(repositoryRoot, ".validation");
         if (File.Exists(Path.Combine(installers, "ReShade_Setup_6.8.0.exe")) &&
             File.Exists(Path.Combine(installers, "ReShade_Setup_6.8.0_Addon.exe")))
@@ -324,6 +390,30 @@ internal static partial class TestSuite
     private static async Task RunIntegrationTestsAsync()
     {
         await RunTestAsync(
+            "Existing and dangling ReShade symlinks support review, preset adoption and rollback",
+            ExistingReShadeSymlinksCanBeAdoptedAsync);
+        await RunTestAsync(
+            "Retargeted managed ReShade links require review rather than blocking installation",
+            ReplacedManagedReShadeLinksRequireReviewAsync);
+        await RunTestAsync(
+            "Games, Vulkan layers and package state survive an app purge and fresh installation",
+            RegisteredGamesSurviveApplicationDeletionAsync);
+        await RunTestAsync(
+            "Existing shared layers preserve registry values, runtimes, comments and foreign app entries",
+            ExistingVulkanLayersRetainRegistrationsAndForeignEntriesAsync);
+        await RunTestAsync(
+            "App-owned layers persist across repair, build switch, updates and last-game unregister",
+            OwnedVulkanLayerSurvivesRepairUpdatesAndLastGameAsync);
+        await RunTestAsync(
+            "Adoption copies selected presets and retains local shaders through repair",
+            AdoptionImportsPresetsAndLocalShadersAsync);
+        await RunTestAsync(
+            "Unregister retains external Vulkan consumers and changed registrations",
+            UnregisterRetainsNewExternalVulkanConsumersAsync);
+        await RunTestAsync(
+            "Manager adoption enforces review and preserves changed configuration",
+            ManagerAdoptionEnforcesReviewAndPreservesChangedConfigAsync);
+        await RunTestAsync(
             "Vulkan inspection checks both views, runtime identity and external consumers without writing",
             VulkanInspectionVerifiesRegistrationWithoutChangesAsync);
         await RunTestAsync(
@@ -331,18 +421,18 @@ internal static partial class TestSuite
             VulkanInventoryFollowsGameAndRegistrationChangesAsync);
         await RunTestAsync(
             "Executable filenames supply game names; changing executables preserves profile IDs and presets",
-            ExecutableNamesChangeWithoutMovingProfilesAsync);
+            ExecutableChangesKeepProfilesAndPresetsAsync);
         await RunTestAsync(
-            "Unmanaged ReShade detection matches replacement backups, ownership checks, and shader preservation",
-            UnmanagedInstallationDetectionPreservesBackupsAsync);
+            "Unmanaged ReShade adoption requires review and unregister preserves user files",
+            UnmanagedInstallationReviewAndUnregisterPreserveUserFilesAsync);
         await RunTestAsync(
             "Build identity and Vulkan manifest traversal validation",
             BuildIdentityAndVulkanManifestTraversalValidationAsync);
         await RunTestAsync(
-            "Vulkan migrates both views and external applications, switches build and rolls back",
+            "Vulkan reuses both existing registry views without migrating external installations",
             VulkanMigratesBothViewsAndExternalApplicationsAsync);
         await RunTestAsync(
-            "Vulkan remains while consumers exist, removes only owned values when unused",
+            "Vulkan remains registered even when no consumers are recorded",
             VulkanRemovalRetainsSharedLayerAndUnownedFilesAsync);
         await RunTestAsync(
             "Vulkan repair preserves newly competing installer consumers and handles explicit layers",
@@ -353,9 +443,6 @@ internal static partial class TestSuite
         await RunTestAsync(
             "Real symlinks: install, repair, API change, removal and ownership protection",
             GameLinksSupportRepairApiChangesAndRemovalAsync);
-        await RunTestAsync(
-            "Manager relocation repairs existing game links and restore returns them",
-            ManagerRelocationRepairsLinksAndPreservesOriginalDataAsync);
         await RunTestAsync(
             "Both game architectures and build switches target the correct stable central DLL",
             GameLinksTargetCorrectArchitecturesAndBuildsAsync);

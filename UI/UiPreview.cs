@@ -41,8 +41,8 @@ internal static partial class UiPreview
         main.Show();
         Application.DoEvents();
         VerifyPackageSelection(main);
-        VerifyButtonStates(main, false, "Repair / edit...", "Remove", "Open profile", "Open game folder", "Repair all",
-            "Update installed packages", "Manage game...");
+        VerifyButtonStates(main, false, "Repair / edit...", "Unregister", "Open profile", "Open game folder", "Repair all",
+            "Purge shader folder...", "Manage game...");
 
         string? screenshot = Argument(args, "--screenshot");
         if (screenshot != null)
@@ -58,6 +58,7 @@ internal static partial class UiPreview
 
         gallery = Path.GetFullPath(gallery);
         Directory.CreateDirectory(gallery);
+        VerifyShaderInventoryAndGridLabels(main, gallery);
         TabControl tabs = Descendants(main).OfType<TabControl>().Single();
         for (var index = 0; index < tabs.TabCount; index++)
         {
@@ -79,26 +80,36 @@ internal static partial class UiPreview
 
         main.Size = originalSize;
         tabs.SelectedIndex = 0;
-        DataGridView grid = Descendants(main).OfType<DataGridView>().Single();
+        DataGridView grid = Descendants(main).OfType<GamesGrid>().Single();
         grid.DataSource = new[]
         {
             new
             {
                 Id = "preview",
+                InstallationWarning = "Managed link is missing: C:\\Games\\Example\\dxgi.dll\n\n" +
+                    "Check the game folder or use Repair / edit.",
                 Name = "game.exe",
-                API = DisplayNames.For(RenderApi.DXGI),
-                Build = DisplayNames.For(RuntimeBuild.FullAddon),
-                Architecture = "X64",
+                API = "DXGI",
+                Build = "Standard + add-on",
+                Architecture = "64-bit",
                 Executable = @"C:\Games\Example\game.exe"
             }
         };
         Application.DoEvents();
-        VerifyButtonStates(main, true, "Repair / edit...", "Remove", "Open profile", "Open game folder", "Repair all");
+        DataGridViewColumn warningColumn = grid.Columns["InstallationWarning"]!;
+        string tooltip = grid.Rows[0].Cells[warningColumn.Index].ToolTipText;
+        if (!tooltip.Contains("Repair / edit") || !tooltip.Contains("dxgi.dll") ||
+            warningColumn.AutoSizeMode != DataGridViewAutoSizeColumnMode.None)
+        {
+            throw new InvalidOperationException("Game installation warnings need a compact icon and an actionable tooltip.");
+        }
+
+        VerifyButtonStates(main, true, "Repair / edit...", "Unregister", "Open profile", "Open game folder", "Repair all");
         grid.ClearSelection();
-        VerifyButtonStates(main, false, "Repair / edit...", "Remove", "Open profile", "Open game folder");
+        VerifyButtonStates(main, false, "Repair / edit...", "Unregister", "Open profile", "Open game folder");
         VerifyButtonStates(main, true, "Repair all");
         grid.Rows[0].Selected = true;
-        VerifyButtonStates(main, true, "Repair / edit...", "Remove", "Open profile", "Open game folder");
+        VerifyButtonStates(main, true, "Repair / edit...", "Unregister", "Open profile", "Open game folder");
         Capture(main, Path.Combine(gallery, "game-selection.png"));
         main.Size = main.MinimumSize;
         Capture(main, Path.Combine(gallery, "compact-game-selection.png"));
@@ -120,7 +131,12 @@ internal static partial class UiPreview
         consumers.Items.Clear();
         consumers.Parent.Visible = false;
 
-        using var setup = new SetupDialog(Path.Combine(gallery, "empty"));
+        using var setup = new SetupDialog();
+        if (setup.CentralRoot != StateStore.DefaultDirectory)
+        {
+            throw new InvalidOperationException("Setup must offer the default central storage folder.");
+        }
+
         CaptureDialog(setup, Path.Combine(gallery, "setup.png"));
         using var game = new GameDialog(RuntimeBuild.Standard);
         ComboBox api = Descendants(game).OfType<ComboBox>()
@@ -158,10 +174,7 @@ internal static partial class UiPreview
         Capture(game, Path.Combine(gallery, "install-vulkan.png"));
         VerifyApiDetection(gallery);
         VerifyExistingInstallationNotice(gallery);
-        using var backup = new BackupDialog(Path.Combine(gallery, "empty"));
-        CaptureDialog(backup, Path.Combine(gallery, "restore.png"));
-        VerifyButtonStates(backup, false, "Restore before operation");
-        VerifyRestoreSelection(gallery);
+        VerifyAdaptiveInstallLayout(gallery);
         using var help = new HelpDialog();
         CaptureDialog(help, Path.Combine(gallery, "help.png"));
         help.Size = help.MinimumSize;
@@ -202,31 +215,10 @@ internal static partial class UiPreview
         list.Parent.Visible = false;
     }
 
-    private static void VerifyRestoreSelection(string gallery)
-    {
-        string backups = Path.Combine(gallery, "restore-fixture");
-        using (var transaction = new FileTransaction(backups, "Preview operation"))
-        {
-            transaction.WriteText(Path.Combine(gallery, "restore-marker.txt"), "UI preview fixture");
-            transaction.Commit();
-        }
-
-        using var dialog = new BackupDialog(backups);
-        dialog.ShowInTaskbar = false;
-        dialog.Opacity = 0;
-        dialog.Show();
-        VerifyButtonStates(dialog, true, "Restore before operation");
-        ListBox list = Descendants(dialog).OfType<ListBox>().Single();
-        list.ClearSelected();
-        VerifyButtonStates(dialog, false, "Restore before operation");
-        list.SelectedIndex = 0;
-        VerifyButtonStates(dialog, true, "Restore before operation");
-    }
-
     private static void VerifyExistingInstallationNotice(string gallery)
     {
         string directory = Path.Combine(gallery, "unmanaged-install");
-        Directory.CreateDirectory(Path.Combine(directory, "reshade-shaders"));
+        Directory.CreateDirectory(Path.Combine(directory, "reshade-shaders", "Shaders"));
         string path = Path.Combine(directory, "game.exe");
         CreatePreviewExecutable(path);
         File.WriteAllText(Path.Combine(directory, "ReShade.ini"), "[GENERAL]\nPerformanceMode=1\n");
@@ -237,7 +229,7 @@ internal static partial class UiPreview
         TextBox executable = Descendants(dialog).OfType<TextBox>()
             .Single(control => control.AccessibleName == "Game executable");
         Label warning = Descendants(dialog).OfType<Label>()
-            .Single(control => control.AccessibleName == "Existing ReShade installation");
+            .Single(control => control.AccessibleName == "Installation changes");
         int originalHeight = dialog.ClientSize.Height;
         executable.Text = path;
         if (!warning.Visible || !warning.Text.Contains("reshade-shaders") ||
@@ -252,6 +244,17 @@ internal static partial class UiPreview
             .Single(control => control.Items.Contains(RuntimeBuild.Standard));
         api.SelectedItem = RenderApi.Direct3D9;
         build.SelectedItem = RuntimeBuild.Standard;
+        CheckBox confirmation = Descendants(dialog).OfType<CheckBox>().Single();
+        VerifyButtonStates(dialog, false, "Install");
+        if (!confirmation.Visible || !warning.Text.Contains("Replaced files will be deleted") ||
+            warning.Text.Contains("Game folder:") ||
+            warning.Text.Contains(dialog.ReviewedPlan!.ProfileDirectory) || !warning.Text.Contains("game profile"))
+        {
+            throw new InvalidOperationException("Adoption must name its destinations without paths and require consent.");
+        }
+
+        confirmation.Checked = true;
+        VerifyButtonStates(dialog, true, "Install");
         if (dialog.Result().Name != "game.exe")
         {
             throw new InvalidOperationException("The game name did not match the executable filename.");
@@ -259,6 +262,10 @@ internal static partial class UiPreview
 
         Capture(dialog, Path.Combine(gallery, "install-unmanaged.png"));
         api.SelectedItem = RenderApi.DXGI;
+        if (confirmation.Checked)
+        {
+            throw new InvalidOperationException("Changing the installation plan must clear replacement consent.");
+        }
         File.WriteAllText(Path.Combine(directory, "dxgi.dll"), "Unrelated DLL preview fixture");
         executable.Text = "";
         executable.Text = path;
@@ -273,7 +280,7 @@ internal static partial class UiPreview
         executable.Text = "";
         executable.Text = path;
         Capture(dialog, Path.Combine(gallery, "install-short-warning.png"));
-        if (dialog.ClientSize.Height >= longWarningHeight)
+        if (dialog.ClientSize.Height > longWarningHeight)
         {
             throw new InvalidOperationException("A shorter installation warning must shrink the dialog.");
         }
@@ -283,12 +290,102 @@ internal static partial class UiPreview
             throw new InvalidOperationException("The installation warning did not clear after changing the executable.");
         }
         Capture(dialog, Path.Combine(gallery, "install-warning-cleared.png"));
+
+        string hook = Path.Combine(directory, "dxgi.dll");
+        File.Delete(hook);
+        File.CreateSymbolicLink(hook, Path.Combine(directory, "previous-runtime", "ReShade64.dll"));
+        executable.Text = path;
+        if (dialog.ReviewedPlan?.Conflict != null || !warning.Text.Contains("Replace link:") ||
+            warning.Text.Contains("Game folder:") || !confirmation.Visible)
+        {
+            throw new InvalidOperationException("An existing ReShade link must allow replacement after review.");
+        }
+        confirmation.Checked = true;
+        VerifyButtonStates(dialog, true, "Install");
+        Capture(dialog, Path.Combine(gallery, "install-existing-symlink.png"));
     }
 
     private static string? Argument(string[] args, string name)
     {
         int index = Array.IndexOf(args, name);
         return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
+    }
+
+    private static void VerifyAdaptiveInstallLayout(string gallery)
+    {
+        foreach (float scale in new[] { 1f, 1.25f, 1.5f, 2f })
+        {
+            using var scaledFont = new Font(DarkTheme.BodyFont.FontFamily, DarkTheme.BodyFont.Size * scale);
+            using var dialog = new GameDialog(RuntimeBuild.Standard) { Opacity = 0, ShowInTaskbar = false };
+            dialog.Show();
+            if (dialog.FormBorderStyle != FormBorderStyle.FixedDialog || dialog.MaximizeBox ||
+                dialog.SizeGripStyle != SizeGripStyle.Hide || dialog.MinimumSize.IsEmpty)
+            {
+                throw new InvalidOperationException("The wizard must have a minimum size and disallow user resizing.");
+            }
+            if (scale != 1f)
+            {
+                dialog.Scale(new SizeF(scale, scale));
+                dialog.Font = scaledFont;
+            }
+
+            Label notice = Descendants(dialog).OfType<Label>()
+                .Single(control => control.AccessibleName == "Installation changes");
+            notice.Text = "Existing ReShade files will be replaced in C:\\Games\\Example & Custom Shaders\\game. " +
+                "Review these changes before installing.";
+            notice.Parent!.Parent!.Visible = true;
+            LinkLabel apiMessage = Descendants(dialog).OfType<LinkLabel>().Single();
+            apiMessage.Text = "Could not identify the graphics API for this executable. " +
+                "Select the graphics API used by the game below.";
+            Descendants(dialog).OfType<CheckBox>().Single().Visible = true;
+            System.Reflection.MethodInfo resize = typeof(GameDialog).GetMethod("UpdateDialogSize",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            resize.Invoke(dialog, null);
+            Capture(dialog, Path.Combine(gallery, $"install-inline-{scale:0.##}.png"));
+
+            notice.Text = string.Join("\n\n", Enumerable.Repeat(
+                "Link: C:\\Games\\" + new string('x', 180) + "\\ReShade.ini\n" +
+                "  -> C:\\Central\\Profiles\\Example_0123456789abcdef\\ReShade.ini", 40));
+            resize.Invoke(dialog, null);
+            var warningViewport = (Panel)notice.Parent;
+            var contentViewport = (Panel)warningViewport.Parent!.Parent!.Parent!;
+            int maxWarningHeight = (int)Math.Ceiling(notice.Font.GetHeight(dialog.DeviceDpi) * 10);
+            if (!warningViewport.VerticalScroll.Visible || warningViewport.HorizontalScroll.Visible ||
+                !notice.Visible || warningViewport.Height > maxWarningHeight || contentViewport.VerticalScroll.Visible ||
+                contentViewport.HorizontalScroll.Visible)
+            {
+                throw new InvalidOperationException("Only the notice area may scroll, with at most ten visible lines.");
+            }
+
+            Capture(dialog, Path.Combine(gallery, $"install-overflow-{scale:0.##}.png"));
+            notice.Text = "Short installation information.";
+            resize.Invoke(dialog, null);
+            if (warningViewport.VerticalScroll.Visible)
+            {
+                throw new InvalidOperationException("The install dialog must shrink when its information gets shorter.");
+            }
+
+            CheckBox confirmation = Descendants(dialog).OfType<CheckBox>().Single();
+            foreach (string message in new[] { "", "Short installation information.",
+                string.Join("\n\n", Enumerable.Repeat("Replace link: dxgi.dll -> central runtime (ReShade64.dll).", 20)) })
+            {
+                foreach (bool showApiMessage in new[] { false, true })
+                {
+                    foreach (bool showConfirmation in new[] { false, true, false, true })
+                    {
+                        notice.Text = message;
+                        notice.Parent!.Parent!.Visible = message.Length > 0;
+                        apiMessage.Parent!.Visible = showApiMessage;
+                        confirmation.Visible = showConfirmation;
+                        resize.Invoke(dialog, null);
+                        Application.DoEvents();
+                        TableLayoutPanel fields = Descendants(dialog).OfType<TableLayoutPanel>()
+                            .Single(table => table.Controls.OfType<ComboBox>().Any());
+                        VerifyInstallDialogSpacing(dialog, fields);
+                    }
+                }
+            }
+        }
     }
 
     private static void CaptureSettingsFooter(MainForm main, TabControl tabs, string path)
@@ -304,32 +401,105 @@ internal static partial class UiPreview
     {
         TextBox search = Descendants(main).OfType<TextBox>()
             .Single(control => control.AccessibleName == "Search shader packages");
-        CheckedListBox packages = Descendants(main).OfType<CheckedListBox>().Single();
-        int initialCount = packages.Items.Count;
+        PackagesGrid packages = Descendants(main).OfType<PackagesGrid>().Single();
+        int initialCount = packages.Rows.Count;
         search.Text = "__no_matching_package__";
-        if (packages.Items.Count != 0)
+        if (packages.Rows.Count != 0)
         {
             throw new InvalidOperationException("Package filtering did not update the themed list.");
         }
 
-        VerifyButtonStates(main, true, "Install / update selected");
+        VerifyButtonStates(main, true, "Update selected");
 
         search.Clear();
-        if (initialCount == 0 || packages.Items.Count != initialCount)
+        if (initialCount == 0 || packages.Rows.Count != initialCount)
         {
             throw new InvalidOperationException("Clearing package search did not restore the catalog.");
         }
 
-        int required = packages.Items.Cast<ShaderPackage>().ToList().FindIndex(package => package.Required);
+        int required = packages.Rows.Cast<DataGridViewRow>().ToList()
+            .FindIndex(row => row.Tag is ShaderPackage { Required: true });
         if (required < 0)
         {
             throw new InvalidOperationException("The preview catalog has no required package.");
         }
 
-        packages.SetItemChecked(required, false);
-        if (!packages.GetItemChecked(required))
+        packages.Rows[required].Cells["Selected"].Value = false;
+        if (packages.Rows[required].Cells["Selected"].Value is not true ||
+            !packages.Rows[required].Cells["Selected"].ReadOnly)
         {
             throw new InvalidOperationException("A required package was deselected.");
+        }
+    }
+
+    private static void VerifyShaderInventoryAndGridLabels(MainForm main, string gallery)
+    {
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.NonPublic;
+        var manager = (Manager)typeof(MainForm).GetField("manager", flags)!.GetValue(main)!;
+        System.Reflection.PropertyInfo stateProperty = typeof(Manager).GetProperty(nameof(Manager.State))!;
+        System.Reflection.MethodInfo refresh = typeof(MainForm).GetMethod("RefreshView", flags)!;
+        System.Reflection.MethodInfo synchronize = typeof(MainForm).GetMethod("SynchronizePackageChoices", flags)!;
+        var choices = (HashSet<string>)typeof(MainForm).GetField("selectedPackageIds", flags)!.GetValue(main)!;
+        string[] originalChoices = choices.ToArray();
+        var state = new ManagerState { Paths = CentralPaths.At(Path.Combine(gallery, "shader-state")) };
+        var packages = Descendants(main).OfType<PackagesGrid>().Single();
+        ShaderPackage optional = packages.Rows.Cast<DataGridViewRow>().Select(row => (ShaderPackage)row.Tag!)
+            .First(package => !package.Required);
+        string file = Path.Combine(state.Paths.Shaders, optional.Id, "Test.fx");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "UI fixture");
+        state.Packages.Add(new InstalledPackage { Id = optional.Id, Name = optional.Name,
+            Files = new() { ["shaders/Test.fx"] = FileTransaction.Hash(file) } });
+        state.Packages.Add(new InstalledPackage { Id = "missing-from-catalog", Name = "Recorded package" });
+        state.SelectedPackages = [optional.Id, "missing-from-catalog"];
+        state.Games.Add(new GameProfile { Executable = @"C:\Example\game.exe", Api = RenderApi.DXGI,
+            Build = RuntimeBuild.FullAddon, Architecture = CpuArchitecture.X64 });
+        state.Games.Add(new GameProfile { Executable = @"C:\Example32\game.exe", Architecture = CpuArchitecture.X86 });
+        TextBox search = Descendants(main).OfType<TextBox>()
+            .Single(control => control.AccessibleName == "Search shader packages");
+        try
+        {
+            stateProperty.SetValue(manager, state);
+            synchronize.Invoke(main, null);
+            refresh.Invoke(main, null);
+            DataGridView games = Descendants(main).OfType<GamesGrid>().Single();
+            if (!Equals(games.Rows[0].Cells["API"].Value, "DXGI") ||
+                !Equals(games.Rows[0].Cells["Build"].Value, "Standard + add-on") ||
+                !Equals(games.Rows[0].Cells["Architecture"].Value, "64-bit") ||
+                !Equals(games.Rows[1].Cells["Architecture"].Value, "32-bit"))
+            {
+                throw new InvalidOperationException("Main game grid labels do not match their display contract.");
+            }
+            DataGridViewRow installed = packages.Rows.Cast<DataGridViewRow>()
+                .Single(row => ((ShaderPackage)row.Tag!).Id == optional.Id);
+            if (!Equals(installed.Cells["Status"].Value, "Installed") || installed.Cells["Selected"].Value is not true)
+            {
+                throw new InvalidOperationException("Installed shaders must show their checked and installed states separately.");
+            }
+            installed.Cells["Selected"].Value = false;
+            search.Text = "__hidden_selection__";
+            search.Clear();
+            if (choices.Contains(optional.Id) || !packages.Rows.Cast<DataGridViewRow>()
+                .Any(row => ((ShaderPackage)row.Tag!).Id == "missing-from-catalog"))
+            {
+                throw new InvalidOperationException("Filtering lost a pending removal or an installed catalog-missing package.");
+            }
+            File.Delete(file);
+            refresh.Invoke(main, null);
+            installed = packages.Rows.Cast<DataGridViewRow>().Single(row => ((ShaderPackage)row.Tag!).Id == optional.Id);
+            if (!Equals(installed.Cells["Status"].Value, "Incomplete"))
+            {
+                throw new InvalidOperationException("Missing managed shader files must show an incomplete installation.");
+            }
+        }
+        finally
+        {
+            stateProperty.SetValue(manager, null);
+            choices.Clear();
+            choices.UnionWith(originalChoices);
+            search.Clear();
+            refresh.Invoke(main, null);
         }
     }
 
@@ -354,6 +524,18 @@ internal static partial class UiPreview
 
     private static void VerifyCommandLayout(Form form)
     {
+        foreach (Button purge in Descendants(form).OfType<Button>().Where(control =>
+            control.Visible && control.Text == "Purge shader folder..."))
+        {
+            foreach (Button command in purge.Parent!.Controls.OfType<Button>())
+            {
+                if (!purge.Parent.ClientRectangle.Contains(command.Bounds))
+                {
+                    throw new InvalidOperationException("Shader package commands must fit within their toolbar.");
+                }
+            }
+        }
+
         foreach (Button browse in Descendants(form).OfType<Button>().Where(control =>
             control.AccessibleName is "Browse for a file" or "Browse for a folder"))
         {
@@ -366,7 +548,8 @@ internal static partial class UiPreview
 
         if (form is GameDialog)
         {
-            TableLayoutPanel layout = form.Controls.OfType<TableLayoutPanel>().Single();
+            TableLayoutPanel layout = Descendants(form).OfType<TableLayoutPanel>()
+                .Single(table => table.Controls.OfType<ComboBox>().Any());
             VerifyInstallDialogSpacing(form, layout);
             foreach (Label label in layout.Controls.OfType<Label>())
             {
@@ -425,46 +608,91 @@ internal static partial class UiPreview
 
     private static void VerifyInstallDialogSpacing(Form form, TableLayoutPanel layout)
     {
-        Control browse = Descendants(form).OfType<TextBox>().Single().Parent!;
+        TableLayoutPanel frame = form.Controls.OfType<TableLayoutPanel>().Single();
+        var viewport = (Panel)layout.Parent!;
+        Control browse = Descendants(form).OfType<TextBox>()
+            .Single(control => control.AccessibleName == "Game executable").Parent!;
         LinkLabel hint = Descendants(form).OfType<LinkLabel>().Single();
         ApiCheckIcon icon = Descendants(form).OfType<ApiCheckIcon>().Single();
         Control detection = hint.Parent!;
-        Label warning = Descendants(form).OfType<Label>().Single(label =>
-            label.AccessibleName == "Existing ReShade installation");
-        Control notice = warning.Parent!;
+        Label warning = Descendants(form).OfType<Label>()
+            .Single(control => control.AccessibleName == "Installation changes");
+        CheckBox confirmation = Descendants(form).OfType<CheckBox>().Single();
+        Control notice = warning.Parent!.Parent!;
         ComboBox api = Descendants(form).OfType<ComboBox>().Single(combo => combo.Items.Contains(RenderApi.Vulkan));
         ComboBox build = Descendants(form).OfType<ComboBox>().Single(combo =>
             combo.Items.Contains(RuntimeBuild.Standard));
         var accept = (Button)form.AcceptButton!;
         Control footer = accept.Parent!;
-        int smallGap = (int)Math.Round(8 * form.DeviceDpi / 96.0);
-        int fieldGap = (int)Math.Round(16 * form.DeviceDpi / 96.0);
-        int footerGap = (int)Math.Round(24 * form.DeviceDpi / 96.0);
+        int smallGap = browse.Margin.Top;
+        int fieldGap = api.Margin.Top;
+        int footerGap = footer.Margin.Top;
         Control beforeApi = warning.Visible ? notice : browse;
-        if (detection.Top != layout.Padding.Top || browse.Top - detection.Bottom != smallGap ||
-            (warning.Visible && notice.Top - browse.Bottom != smallGap) ||
-            api.Top - beforeApi.Bottom != fieldGap || build.Top - api.Bottom != fieldGap ||
-            footer.Top - build.Bottom != footerGap)
+        bool detectionSpacingValid = detection.Visible
+            ? detection.Top == layout.Padding.Top && browse.Top - detection.Bottom == smallGap
+            : browse.Top == layout.Padding.Top + smallGap;
+        if (!detectionSpacingValid ||
+            (warning.Visible && notice.Top - browse.Bottom != notice.Margin.Top) ||
+            api.Top - beforeApi.Bottom != fieldGap || build.Top - api.Bottom != build.Margin.Top ||
+            footer.Top - viewport.Bottom != footerGap)
         {
-            throw new InvalidOperationException("Install dialog gaps must remain consistent as hints and warnings change.");
+            throw new InvalidOperationException("Install dialog gaps changed: " +
+                $"detection {detection.Top}/{layout.Padding.Top}, " +
+                $"browse {browse.Top - detection.Bottom}/{smallGap}, " +
+                $"notice {notice.Top - browse.Bottom}/{notice.Margin.Top}, " +
+                $"API {api.Top - beforeApi.Bottom}/{fieldGap}, " +
+                $"build {build.Top - api.Bottom}/{build.Margin.Top}, " +
+                $"footer {footer.Top - viewport.Bottom}/{footerGap}. " +
+                $"API bounds {api.Bounds}, preferred {api.PreferredSize}, " +
+                $"row {layout.GetRowHeights()[layout.GetRow(api)]}. " +
+                $"Build bounds {build.Bounds}, preferred {build.PreferredSize}.");
         }
+
         if (browse.Left != api.Left || build.Left != api.Left || detection.Left != api.Left ||
             hint.Left != icon.Right + icon.Margin.Right || hint.Right > detection.ClientSize.Width ||
             (warning.Visible && notice.Left != api.Left) ||
-            layout.Right != form.ClientSize.Width || layout.Bottom != form.ClientSize.Height ||
-            footer.Right != api.Right || footer.Left != layout.Padding.Left ||
-            footer.Bottom != form.ClientSize.Height - layout.Padding.Bottom ||
-            accept.Top != 0 || footer.Left + accept.Right != api.Right ||
-            footer.Top + accept.Bottom != footer.Bottom)
+            frame.Right != form.ClientSize.Width || frame.Bottom != form.ClientSize.Height ||
+            viewport.Left != frame.Padding.Left || viewport.Right != form.ClientSize.Width - frame.Padding.Right ||
+            footer.Right != form.ClientSize.Width - frame.Padding.Right || footer.Left != frame.Padding.Left ||
+            footer.Bottom != form.ClientSize.Height - frame.Padding.Bottom ||
+            accept.Top != 0 || accept.Right != footer.ClientSize.Width || accept.Bottom != footer.ClientSize.Height)
         {
             throw new InvalidOperationException("Install dialog fields and buttons must share the same outer padding.");
         }
-        if (warning.Visible && notice.Height != Math.Max(
-            warning.GetPreferredSize(new Size(warning.Width, 0)).Height,
-            notice.Controls.Cast<Control>().Where(control => control != warning)
-                .Max(control => control.Height + control.Margin.Vertical)))
+
+        if (layout.Bottom > viewport.ClientSize.Height ||
+            viewport.VerticalScroll.Visible || viewport.HorizontalScroll.Visible)
         {
-            throw new InvalidOperationException("Installation warnings must fit their current text without unused space.");
+            throw new InvalidOperationException("Wizard fields must fit without scrolling the whole form.");
+        }
+
+        if (confirmation.Visible)
+        {
+            int confirmationCenter = confirmation.Top + (confirmation.Height / 2);
+            int buttonCenter = accept.Top + (accept.Height / 2);
+            int firstButton = footer.Controls.OfType<Button>().Min(button => button.Left);
+            if (confirmation.Parent != footer || !footer.ClientRectangle.Contains(confirmation.Bounds) ||
+                confirmation.Right + confirmation.Margin.Right > firstButton ||
+                Math.Abs(confirmationCenter - buttonCenter) > 1 ||
+                confirmation.Width < confirmation.GetPreferredSize(Size.Empty).Width ||
+                confirmation.CheckAlign != ContentAlignment.MiddleRight || !confirmation.Font.Bold ||
+                confirmation.Font.Size != form.Font.Size || confirmation.Font.FontFamily.Name != form.Font.FontFamily.Name)
+            {
+                throw new InvalidOperationException("Overwrite confirmation must fit beside the buttons, " +
+                    "keep its checkbox on the right and use the dialog font size with bold text.");
+            }
+        }
+
+        if (warning.Visible && (!warning.AutoSize || warning.UseMnemonic ||
+            warning.Height < warning.GetPreferredSize(new Size(warning.Width, 0)).Height))
+        {
+            throw new InvalidOperationException("Inline installation information must wrap without clipping its text.");
+        }
+
+        Rectangle screen = Screen.FromControl(form).WorkingArea;
+        if (form.Visible && !screen.Contains(form.Bounds))
+        {
+            throw new InvalidOperationException("The install dialog must fit within the screen working area.");
         }
     }
 

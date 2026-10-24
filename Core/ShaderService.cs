@@ -136,7 +136,7 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
             if (framework == null)
             {
                 const string message = "BFBFX requires ZenteonFX, which is missing from the catalog. " +
-                    "Open Shader packages > Refresh catalog, then retry Install / update selected.";
+                    "Open Shader packages > Refresh catalog, then retry Update selected.";
                 if (dependencyUnavailable == null)
                 {
                     throw new InvalidDataException(message);
@@ -169,7 +169,14 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
             (needsFramework && CanonicalRepository(candidate.Repository).EndsWith("/zenteon/zenteonfx"))));
     }
 
-    public static string PackageDirectory(string root, string id) => FileTransaction.Contained(root, id);
+    public static string PackageDirectory(string root, string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || Path.GetFileName(id) != id)
+        {
+            throw new InvalidDataException("A shader package ID must be a single folder name.");
+        }
+        return FileTransaction.Contained(root, id);
+    }
 
     public static void CheckUnmodified(InstalledPackage package, CentralPaths paths)
     {
@@ -192,16 +199,16 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
                 actual.Add(key);
                 if (!package.Files.TryGetValue(key, out string? hash) || FileTransaction.Hash(path) != hash)
                 {
-                    throw new IOException($"Local changes were found in {path}. Back up your edits and restore " +
-                        "the package's original files before retrying Shader packages > Install / update selected.");
+                    throw new IOException($"Local changes were found in {path}. Restore the original files, " +
+                        "or use Shader packages > Purge shader folder to reinstall all central shader packages.");
                 }
             }
         }
 
         if (package.Files.Keys.Any(value => !actual.Contains(value)))
         {
-            throw new IOException($"Files are missing from {package.Name}. Restore the package's original files " +
-                "from its repository or use Runtime & storage > Restore, then retry the package update.");
+            throw new IOException($"Files are missing from {package.Name}. Restore the original files, " +
+                "or use Shader packages > Purge shader folder, then Update selected.");
         }
     }
 
@@ -277,11 +284,16 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
 
         string shaderTarget = PackageDirectory(state.Paths.Shaders, package.Id);
         string textureTarget = PackageDirectory(state.Paths.Textures, package.Id);
-        if (previous == null &&
-            ((Directory.Exists(shaderTarget) && EnumerateFiles(shaderTarget).Any()) ||
-            (Directory.Exists(textureTarget) && EnumerateFiles(textureTarget).Any())))
+        if (previous == null)
         {
-            throw new IOException("Unmanaged files occupy the package directory.");
+            string[] occupied = new[] { shaderTarget, textureTarget }
+                .Where(path => Directory.Exists(path) && EnumerateFiles(path).Any()).ToArray();
+            if (occupied.Length > 0)
+            {
+                throw new IOException("Unmanaged files occupy the package directory: " + string.Join(", ", occupied) +
+                    ". Use Shader packages > Purge shader folder, then Update selected " +
+                    "to reinstall all central shader packages.");
+            }
         }
 
         string[] shaderTypes = [".fx", ".fxh", ".h", ".hlsl", ".cfg", ".txt", ".json"];
@@ -364,14 +376,7 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
         var managedEffects = state.Packages.SelectMany(package => package.Files.Keys
             .Where(path => path.StartsWith("shaders/") && path.EndsWith(".fx", StringComparison.OrdinalIgnoreCase))
             .Select(path => (Name: Path.GetFileName(path), Package: package.Name)));
-        IEnumerable<(string Name, string Package)> legacyEffects = [];
-        if (Directory.Exists(state.Paths.Shaders))
-        {
-            legacyEffects = Directory.EnumerateFiles(state.Paths.Shaders, "*.fx", SearchOption.TopDirectoryOnly)
-                .Select(path => (Name: Path.GetFileName(path), Package: "Legacy / custom flat folder"));
-        }
-
-        return managedEffects.Concat(legacyEffects).GroupBy(effect => effect.Name, StringComparer.OrdinalIgnoreCase)
+        return managedEffects.GroupBy(effect => effect.Name, StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() > 1)
             .Select(group => $"{group.Key}: {string.Join(", ", group.Select(effect => effect.Package))}")
             .ToList();

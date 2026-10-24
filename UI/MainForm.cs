@@ -27,16 +27,11 @@ public sealed class MainForm : Form
         RowHeadersVisible = false
     };
 
-    private readonly PackageList packageList = new()
-    {
-        Dock = DockStyle.Fill,
-        CheckOnClick = true,
-        IntegralHeight = false
-    };
+    private readonly PackagesGrid packageList = new();
 
     private readonly TextBox packageSearchBox = new()
     {
-        PlaceholderText = "Search shader packages…",
+        PlaceholderText = "Search shader packages\u2026",
         Dock = DockStyle.Top
     };
 
@@ -115,12 +110,11 @@ public sealed class MainForm : Form
     private readonly IProgress<string> progress;
     private List<ShaderPackage> catalog = [];
     private CancellationTokenSource? operationCancellation;
-    private bool updatingPackages;
     private string? lastVulkanInspectionError;
 
     public MainForm(string applicationDirectory, bool preview = false)
     {
-        manager = new(new StateStore(applicationDirectory), new WindowsLayerRegistry());
+        manager = new(StateStore.ForApplication(applicationDirectory), new WindowsLayerRegistry());
         Text = $"ReShade Centralized {AppVersion.Text}";
         ClientSize = new(1080, 760);
         MinimumSize = new(900, 650);
@@ -128,6 +122,7 @@ public sealed class MainForm : Form
         Font = DarkTheme.BodyFont;
         AutoScaleMode = AutoScaleMode.Dpi;
         progress = new Progress<string>(WriteLog);
+        manager.Warning += message => progress.Report(message);
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -208,7 +203,7 @@ public sealed class MainForm : Form
             {
                 e.Cancel = true;
                 operationCancellation.Cancel();
-                WriteLog("Cancelling the active operation before closing…");
+                WriteLog("Cancelling the active operation before closing\u2026");
             }
         };
         FormClosed += (_, _) => manager.Dispose();
@@ -268,15 +263,11 @@ public sealed class MainForm : Form
 
     private async Task InitializeAsync()
     {
-        if (!await RunOperationAsync("Opening manager", _ => Task.Run(manager.Open)))
-        {
-            Close();
-            return;
-        }
+        await RunOperationAsync("Opening manager", _ => Task.Run(manager.Open));
 
-        if (manager.State == null)
+        while (manager.State == null)
         {
-            using var setup = new SetupDialog(manager.Store.DirectoryPath);
+            using var setup = new SetupDialog();
             if (setup.ShowDialog(this) != DialogResult.OK)
             {
                 Close();
@@ -284,13 +275,8 @@ public sealed class MainForm : Form
             }
 
             await RunOperationAsync(
-                "Importing settings",
-                cancellationToken => manager.InitializeAsync(setup.CentralRoot, setup.LegacyIni, cancellationToken));
-            if (manager.State == null)
-            {
-                Close();
-                return;
-            }
+                "Opening central storage",
+                cancellationToken => manager.InitializeAsync(setup.CentralRoot, cancellationToken));
         }
 
         LoadBundledCatalog();
@@ -314,7 +300,7 @@ public sealed class MainForm : Form
         commands.Controls.Add(CreateActionButton("Install game...", OnInstallToGameAsync, primary: true));
         commands.Controls.Add(CreateActionButton("Repair / edit...", EditSelectedAsync,
             isAvailable: () => gamesGrid.SelectedRows.Count > 0));
-        commands.Controls.Add(CreateActionButton("Remove", OnRemoveSelectedAsync,
+        commands.Controls.Add(CreateActionButton("Unregister", OnRemoveSelectedAsync,
             isAvailable: () => gamesGrid.SelectedRows.Count > 0));
         commands.Controls.Add(CreateActionButton("Repair all", OnRepairAllAsync,
             isAvailable: () => gamesGrid.Rows.Count > 0));
@@ -361,12 +347,13 @@ public sealed class MainForm : Form
     {
         GameProfile game = GetSelectedGame();
         ManagerState state = RequireState();
-        using var dialog = new GameDialog(state.VulkanBuild, game, state.Games);
+        using var dialog = new GameDialog(state.VulkanBuild, game, state.Games, state: state);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             await RunOperationAsync(
                 "Repairing game",
-                cancellationToken => manager.InstallAsync(dialog.Result(), cancellationToken));
+                cancellationToken => manager.InstallAsync(
+                    dialog.Result(), cancellationToken, dialog.ReviewedPlan, dialog.ReplacementConfirmed));
         }
     }
 
@@ -377,43 +364,48 @@ public sealed class MainForm : Form
         packageSearchBox.Margin = new Padding(0, 0, 0, 12);
         packageSearchBox.AccessibleName = "Search shader packages";
         layout.Controls.Add(packageSearchBox, 0, 0);
-        packageList.Font = new Font("Segoe UI", 11);
+        packageList.Font = DarkTheme.BodyFont;
         packageList.Margin = Padding.Empty;
         layout.Controls.Add(packageList, 0, 1);
         FlowLayoutPanel commands = CreateCommandBar();
+        commands.WrapContents = true;
         commands.Margin = new Padding(0, 12, 0, 0);
         commands.Controls.Add(CreateActionButton(
-            "Install / update selected", OnInstallUpdateSelectedAsync, primary: true,
+            "Update selected", OnInstallUpdateSelectedAsync, primary: true,
             isAvailable: () => selectedPackageIds.Count > 0));
-        commands.Controls.Add(CreateActionButton("Update installed packages", OnUpdateInstalledPackagesAsync,
-            isAvailable: () => manager.State?.Packages.Count > 0));
         commands.Controls.Add(CreateActionButton("Refresh catalog", OnRefreshCatalogAsync));
+        commands.Controls.Add(CreateActionButton("Purge shader folder...", OnPurgeShaderFolderAsync,
+            isAvailable: () => manager.State != null));
         layout.Controls.Add(commands, 0, 2);
         packageSearchBox.TextChanged += (_, _) => FilterPackages();
-        packageList.ItemCheck += (_, e) =>
+        packageList.PackageChecked += (package, selected) =>
         {
-            if (updatingPackages)
+            if (selected)
             {
-                return;
-            }
-
-            var item = (ShaderPackage)packageList.Items[e.Index];
-            if (item.Required)
-            {
-                e.NewValue = CheckState.Checked;
-            }
-
-            if (e.NewValue == CheckState.Checked)
-            {
-                selectedPackageIds.Add(item.Id);
+                selectedPackageIds.Add(package.Id);
             }
             else
             {
-                selectedPackageIds.Remove(item.Id);
+                selectedPackageIds.Remove(package.Id);
             }
-
+            ExpandShaderDependencies();
+            packageList.SetChecks(selectedPackageIds, AvailablePackages());
             UpdateActionAvailability();
         };
+    }
+
+    private List<ShaderPackage> AvailablePackages() => catalog.Concat(
+        (manager.State?.Packages ?? []).Where(installed => !catalog.Any(package => package.Id == installed.Id))
+            .Select(Manager.PackageDescriptor)).ToList();
+
+    private void ExpandShaderDependencies()
+    {
+        List<ShaderPackage> packages = AvailablePackages();
+        ShaderPackage[] selected = packages.Where(package => selectedPackageIds.Contains(package.Id)).ToArray();
+        foreach (ShaderPackage dependency in ShaderService.WithDependencies(selected, packages, (_, _) => { }))
+        {
+            selectedPackageIds.Add(dependency.Id);
+        }
     }
 
     private void SynchronizePackageChoices()
@@ -423,83 +415,56 @@ public sealed class MainForm : Form
         {
             selectedPackageIds.Add(id);
         }
-
         if (selectedPackageIds.Count == 0)
         {
-            foreach (ShaderPackage? package in catalog.Where(package => package.Required || package.Enabled))
+            foreach (InstalledPackage installed in manager.State?.Packages ?? [])
+            {
+                selectedPackageIds.Add(installed.Id);
+            }
+            foreach (ShaderPackage package in catalog.Where(package => package.Required || package.Enabled))
             {
                 selectedPackageIds.Add(package.Id);
             }
         }
+        ExpandShaderDependencies();
     }
 
     private void FilterPackages()
     {
-        updatingPackages = true;
-        packageList.BeginUpdate();
-        packageList.Items.Clear();
-        var matchingPackages = catalog.Where(package =>
-            $"{package.Name} {package.Description}".Contains(
-                packageSearchBox.Text, StringComparison.OrdinalIgnoreCase));
-        foreach (ShaderPackage package in matchingPackages)
-        {
-            packageList.Items.Add(package, selectedPackageIds.Contains(package.Id) || package.Required);
-        }
-
-        packageList.EndUpdate();
-        updatingPackages = false;
+        List<ShaderPackage> packages = AvailablePackages();
+        packageList.SetPackages(packages.Where(package =>
+            $"{package.Name} {package.Description}".Contains(packageSearchBox.Text, StringComparison.OrdinalIgnoreCase)),
+            selectedPackageIds, manager.State);
+        packageList.SetChecks(selectedPackageIds, packages);
         UpdateActionAvailability();
     }
 
-    private Task UpdatePackagesAsync(bool installedOnly)
+    private async Task UpdatePackagesAsync()
     {
-        return RunOperationAsync("Updating shader packages", async cancellationToken =>
+        packageList.EndEdit();
+        List<ShaderPackage> packages = AvailablePackages();
+        ShaderSelectionPlan plan = manager.CreateShaderSelectionPlan(
+            packages.Where(package => selectedPackageIds.Contains(package.Id)).ToArray(), packages);
+        try
         {
-            ManagerState state = RequireState();
-            if (installedOnly && state.Packages.Count == 0)
+            await RunOperationAsync("Updating shader selection", async cancellationToken =>
             {
-                throw new InvalidOperationException("No shader packages are installed. In Shader packages, " +
-                    "select packages and choose Install / update selected before using Update installed packages.");
-            }
-
-            HashSet<string> ids = installedOnly ?
-                state.Packages.Select(package => package.Id).ToHashSet() :
-                selectedPackageIds;
-            var chosen = catalog.Where(package => ids.Contains(package.Id)).ToList();
-            var unavailablePackages = state.Packages.Where(package =>
-                ids.Contains(package.Id) && !catalog.Any(entry => entry.Id == package.Id));
-            foreach (InstalledPackage missing in unavailablePackages)
-            {
-                chosen.Add(new ShaderPackage
+                PackageUpdateReport report = await manager.ApplyShaderSelectionAsync(
+                    plan, packages, progress, cancellationToken, removalsConfirmed: true);
+                WriteLog(report.Summary);
+                if (report.FailedCount > 0)
                 {
-                    Id = missing.Id,
-                    Name = missing.Name,
-                    Repository = missing.Repository,
-                    DownloadUrl = missing.DownloadUrl
-                });
-            }
-
-            PackageUpdateReport report = await manager.UpdatePackagesWithReportAsync(
-                chosen,
-                catalog,
-                progress,
-                cancellationToken,
-                !installedOnly);
-            WriteLog(report.Summary);
-
-            SynchronizePackageChoices();
+                    tabs.SelectedIndex = 3;
+                    MessageBox.Show(this, report.Summary +
+                        "\n\nCompleted changes were kept. Check Activity for failures, then retry Update selected.",
+                        "Shader packages", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }, reportCompletion: false);
+        }
+        finally
+        {
             FilterPackages();
-            if (report.FailedCount > 0)
-            {
-                tabs.SelectedIndex = 3;
-                string outcome = report.InstalledCount > 0 ? "Successful packages are installed." :
-                    "No packages were installed during this run. Existing files were retained.";
-                MessageBox.Show(this,
-                    report.Summary + "\n\n" + outcome + " Activity lists each failure and " +
-                    "its recovery steps. Retry failed packages in Shader packages > Install / update selected.",
-                    "Shader packages", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-        }, reportCompletion: false);
+        }
     }
 
     private void BuildSettings()
@@ -526,7 +491,7 @@ public sealed class MainForm : Form
         runtimeCommands.Controls.Add(CreateActionButton("Import downloaded installers...", ImportRuntimeAsync));
         AddSectionRow(runtime, runtimeCommands);
 
-        TableLayoutPanel vulkan = CreateSection(sections, "Vulkan — all games");
+        TableLayoutPanel vulkan = CreateSection(sections, "Vulkan \u2014 all games");
         var vulkanStatus = new TableLayoutPanel
         {
             AutoSize = true,
@@ -572,9 +537,7 @@ public sealed class MainForm : Form
         TableLayoutPanel storage = CreateSection(sections, "Central storage");
         AddSectionRow(storage, storageLabel);
         FlowLayoutPanel storageCommands = CreateCommandBar();
-        storageCommands.Controls.Add(CreateActionButton("Relocate central folder...", OnRelocateCentralFolderAsync));
         storageCommands.Controls.Add(CreateActionButton("Open central folder", OnOpenCentralFolderAsync));
-        storageCommands.Controls.Add(CreateActionButton("Restore...", OnRestoreAsync));
         AddSectionRow(storage, storageCommands);
 
         TableLayoutPanel application = CreateSection(sections, "Application");
@@ -737,9 +700,13 @@ public sealed class MainForm : Form
             activityLog.Text = activityLog.Text[^80000..];
         }
 
-        activityLog.AppendText(DateTime.Now.ToString("HH:mm:ss") + "  " + text + Environment.NewLine);
+        string message = DateTime.Now.ToString("HH:mm:ss") + "  " + text;
+        activityLog.AppendText(message + Environment.NewLine);
+#if DEBUG
+        Console.WriteLine(message);
+#endif
         string summary = text.Replace('\r', ' ').Replace('\n', ' ');
-        statusLabel.Text = summary.Length > 100 ? summary[..100] + "…" : summary;
+        statusLabel.Text = summary.Length > 100 ? summary[..100] + "\u2026" : summary;
     }
 
     private void ReportError(Exception error)
@@ -759,7 +726,7 @@ public sealed class MainForm : Form
         Dictionary<RuntimeBuild, string> runtimeVersions = Enum.GetValues<RuntimeBuild>()
             .ToDictionary(build => build, build => GetInstalledRuntimeVersion(state, build));
         versionsLabel.Text = string.Join(
-            "   •   ",
+            "   \u2022   ",
             runtimeVersions.Select(item => $"{DisplayNames.For(item.Key)}: {item.Value}"));
         runtimeStatusLabel.Text = runtimeVersions.Values.All(version => version == "Not installed")
             ? "ReShade: Not installed"
@@ -768,13 +735,12 @@ public sealed class MainForm : Form
         gamesGrid.DataSource = state?.Games.Select(game => new
         {
             game.Id,
-            Name = string.IsNullOrWhiteSpace(game.Executable) ? game.Name : Path.GetFileName(game.Executable),
-            API = DisplayNames.For(game.Api),
-            Build = DisplayNames.For(game.Build),
-            Architecture = game.Executable == null ?
-            "Select executable" :
-            game.Architecture.ToString(),
-            Executable = game.Executable ?? "Legacy profile"
+            InstallationWarning = DeploymentService.GetInstallationWarning(game),
+            Name = Path.GetFileName(game.Executable),
+            API = game.Api == RenderApi.DXGI ? "DXGI" : DisplayNames.For(game.Api),
+            Build = game.Build == RuntimeBuild.FullAddon ? "Standard + add-on" : DisplayNames.For(game.Build),
+            Architecture = game.Architecture == CpuArchitecture.X86 ? "32-bit" : "64-bit",
+            game.Executable
         })
             .ToList();
         if (gamesGrid.Columns["Id"] is { } idColumn)
@@ -789,6 +755,7 @@ public sealed class MainForm : Form
         }
 
         RefreshVulkanStatus();
+        FilterPackages();
         UpdateActionAvailability();
     }
 
@@ -798,7 +765,7 @@ public sealed class MainForm : Form
         bool pendingBuild = manager.State != null && vulkanBuildSelector.SelectedItem is RuntimeBuild selectedBuild &&
             selectedBuild != manager.State.VulkanBuild;
         bool applied = inspection.IsApplied && !pendingBuild;
-        vulkanStatusLabel.Text = pendingBuild ? "Selected build is not applied. Choose Apply / repair." :
+        vulkanStatusLabel.Text = pendingBuild ? "Build choice applies to app-owned layers. Choose Apply / repair." :
             inspection.Message;
         vulkanStatusLabel.ForeColor = applied || SystemInformation.HighContrast
             ? DarkTheme.Muted : Color.FromArgb(242, 199, 91);
@@ -859,12 +826,13 @@ public sealed class MainForm : Form
     private async Task OnInstallToGameAsync()
     {
         ManagerState state = RequireState();
-        using var dialog = new GameDialog(state.VulkanBuild, managedGames: state.Games);
+        using var dialog = new GameDialog(state.VulkanBuild, managedGames: state.Games, state: state);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             await RunOperationAsync(
                 "Installing game",
-                cancellationToken => manager.InstallAsync(dialog.Result(), cancellationToken));
+                cancellationToken => manager.InstallAsync(
+                    dialog.Result(), cancellationToken, dialog.ReviewedPlan, dialog.ReplacementConfirmed));
         }
     }
 
@@ -873,13 +841,21 @@ public sealed class MainForm : Form
         GameProfile game = GetSelectedGame();
         if (MessageBox.Show(
             this,
-            "Remove managed links for " + game.Name + "? Presets and profile files are retained.",
-            "Remove ReShade",
+            "Unregister " + game.Name + "? Presets, profile files, and local shaders are kept. " +
+                "Files changed by other tools are left in place.",
+            "Unregister ReShade",
             MessageBoxButtons.OKCancel) == DialogResult.OK)
         {
             await RunOperationAsync(
-                "Removing game links",
-                cancellationToken => manager.RemoveAsync(game.Id, cancellationToken));
+                "Unregistering game",
+                async cancellationToken =>
+                {
+                    UnregisterResult result = await manager.UnregisterAsync(game.Id, cancellationToken);
+                    foreach (string path in result.PreservedFiles)
+                    {
+                        WriteLog("Preserved externally changed file: " + path);
+                    }
+                });
         }
     }
 
@@ -899,12 +875,6 @@ public sealed class MainForm : Form
     private Task OnOpenGameFolderAsync()
     {
         GameProfile game = GetSelectedGame();
-        if (string.IsNullOrWhiteSpace(game.Executable))
-        {
-            throw new InvalidOperationException("This profile has no game executable. Select the game and choose " +
-                "Repair / edit to select its executable before opening the game folder.");
-        }
-
         string directory = Path.GetDirectoryName(game.Executable)!;
         if (!Directory.Exists(directory))
         {
@@ -921,18 +891,31 @@ public sealed class MainForm : Form
         return RunOperationAsync("Refreshing catalog", async cancellationToken =>
         {
             catalog = await manager.Shaders.CatalogAsync(progress, cancellationToken);
+            ExpandShaderDependencies();
             FilterPackages();
         });
     }
 
     private Task OnInstallUpdateSelectedAsync()
     {
-        return UpdatePackagesAsync(false);
+        return UpdatePackagesAsync();
     }
 
-    private Task OnUpdateInstalledPackagesAsync()
+    private async Task OnPurgeShaderFolderAsync()
     {
-        return UpdatePackagesAsync(true);
+        string root = RequireState().Paths.ShaderRoot;
+        DialogResult answer = MessageBox.Show(this,
+            "Delete all central shaders and textures, including custom and unmanaged files?\n\n" + root +
+            "\n\nPresets, profiles and game-local shaders will be kept. Close affected games first. " +
+            "After purging, choose Update selected to reinstall your selected packages.",
+            "Purge shader folder", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+        if (answer != DialogResult.Yes)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Purging central shader folder",
+            cancellationToken => manager.PurgeShaderFolderAsync(progress, cancellationToken));
     }
 
     private Task OnUpdateReShadeAsync()
@@ -968,27 +951,13 @@ public sealed class MainForm : Form
             Api = RenderApi.Vulkan
         };
         using var dialog = new GameDialog(
-            state.VulkanBuild, game, state.Games);
+            state.VulkanBuild, game, state.Games, state: state);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             await RunOperationAsync(
                 "Adopting Vulkan game",
-                cancellationToken => manager.InstallAsync(dialog.Result(), cancellationToken));
-        }
-    }
-
-    private async Task OnRelocateCentralFolderAsync()
-    {
-        using var dialog = new FolderBrowserDialog
-        {
-            Description = "New central folder",
-            UseDescriptionForTitle = true
-        };
-        if (dialog.ShowDialog(this) == DialogResult.OK)
-        {
-            await RunOperationAsync(
-                "Relocating central storage",
-                cancellationToken => manager.RelocateAsync(dialog.SelectedPath, cancellationToken));
+                cancellationToken => manager.InstallAsync(
+                    dialog.Result(), cancellationToken, dialog.ReviewedPlan, dialog.ReplacementConfirmed));
         }
     }
 
@@ -996,26 +965,6 @@ public sealed class MainForm : Form
     {
         OpenFolder(RequireState().Paths.Root);
         return Task.CompletedTask;
-    }
-
-    private async Task OnRestoreAsync()
-    {
-        using var dialog = new BackupDialog(manager.Store.Backups);
-        if (dialog.ShowDialog(this) == DialogResult.OK)
-        {
-            await RunOperationAsync(
-                "Restoring previous state",
-                cancellationToken => manager.RestoreToAsync(dialog.SelectedBackup, cancellationToken));
-        }
-
-        if (manager.State == null)
-        {
-            Close();
-            return;
-        }
-
-        SynchronizePackageChoices();
-        FilterPackages();
     }
 
     private Task OnCheckAppReleaseAsync()

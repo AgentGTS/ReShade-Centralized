@@ -102,114 +102,109 @@ public sealed class WindowsLayerRegistry(string registryRoot = @"SOFTWARE\Khrono
 
 public sealed class VulkanService(ILayerRegistry registry)
 {
-    private static List<LayerRegistration> DesiredRegistrations(ManagerState state)
+    private sealed record RegisteredLayer(LayerRegistration Registration, string Library);
+
+    private List<RegisteredLayer> RegisteredLayers()
     {
-        string binaries = state.Paths.Binaries(state.VulkanBuild);
-        return
-        [
-            new("HKLM", "64", Path.Combine(binaries, "ReShade64.json")),
-            new("HKLM", "32", Path.Combine(binaries, "ReShade32.json"))
-        ];
+        var layers = new List<RegisteredLayer>();
+        foreach (LayerRegistration registration in registry.Enumerate())
+        {
+            bool recognized = Path.GetFileName(registration.Manifest)
+                .Contains("reshade", StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                if (File.Exists(registration.Manifest))
+                {
+                    using var manifest = JsonDocument.Parse(File.ReadAllText(registration.Manifest));
+                    recognized |= manifest.RootElement.TryGetProperty("layer", out JsonElement layer) &&
+                        layer.TryGetProperty("name", out JsonElement name) && name.GetString() == "VK_LAYER_reshade";
+                }
+
+                string? library = RecognizedLibrary(registration.Manifest);
+                if (library != null)
+                {
+                    layers.Add(new(registration, library));
+                }
+                else if (recognized)
+                {
+                    throw new InvalidDataException(
+                        "Cannot verify the existing ReShade layer: " + registration.Manifest);
+                }
+            }
+            catch (Exception error) when (error is JsonException or IOException or UnauthorizedAccessException or
+                InvalidOperationException or KeyNotFoundException or ArgumentException)
+            {
+                // An uncertain ReShade registration must not be replaced with a competing layer.
+                if (recognized)
+                {
+                    throw new InvalidDataException("Check the existing Vulkan layer: " + registration.Manifest, error);
+                }
+            }
+        }
+
+        return layers;
     }
 
-    private static bool SameRegistration(LayerRegistration first, LayerRegistration second) =>
-        first.Hive.Equals(second.Hive, StringComparison.OrdinalIgnoreCase) && first.View == second.View &&
-        first.Kind.Equals(second.Kind, StringComparison.OrdinalIgnoreCase) &&
-        FileTransaction.Same(first.Manifest, second.Manifest);
+    private static string AppsPath(RegisteredLayer layer) =>
+        Path.Combine(Path.GetDirectoryName(layer.Registration.Manifest)!, "ReShadeApps.ini");
+
+    private static bool MatchesArchitecture(RegisteredLayer layer, string view) =>
+        layer.Registration.View == view && PortableExecutable.Architecture(layer.Library) ==
+            (view == "32" ? CpuArchitecture.X86 : CpuArchitecture.X64);
 
     public VulkanInspection Inspect(ManagerState? state)
     {
-        const string notApplied = "Not applied. Choose Apply / repair.";
+        const string missing = "No shared layer for one or both architectures. Choose Apply / repair.";
         if (state == null)
         {
-            return new(false, notApplied, []);
+            return new(false, missing, []);
         }
 
-        var consumers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (GameProfile game in state.Games.Where(game => game.Api == RenderApi.Vulkan &&
-            game.Executable != null))
-        {
-            consumers.Add(game.Executable!);
-        }
-
-        void AddExternalConsumers(IEnumerable<string> applications)
-        {
-            foreach (string application in applications)
-            {
-                if (!state.Games.Any(game => game.Executable != null &&
-                        FileTransaction.Same(game.Executable, application)))
-                {
-                    consumers.Add(application);
-                }
-            }
-        }
-
-        AddExternalConsumers(state.ExternalVulkanApps);
-        List<LayerRegistration> desired = DesiredRegistrations(state);
-        bool competing = false;
-        string? inspectionError = null;
+        var consumers = state.Games.Where(game => game.Api == RenderApi.Vulkan)
+            .Select(game => game.Executable).ToHashSet(StringComparer.OrdinalIgnoreCase);
         try
         {
-            foreach (LayerRegistration registration in registry.Enumerate())
+            List<RegisteredLayer> layers = RegisteredLayers();
+            foreach (string path in layers.Select(AppsPath).Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                bool isDesired = desired.Any(expected => SameRegistration(expected, registration));
-                bool recognized = isDesired || Path.GetFileName(registration.Manifest)
-                    .Contains("reshade", StringComparison.OrdinalIgnoreCase);
-                try
+                foreach (string application in IniDocument.Split(IniDocument.Read(path).Get("", "Apps")))
                 {
-                    string? library = RecognizedLibrary(registration.Manifest);
-                    if (library == null)
+                    if (!state.Games.Any(game => game.Api != RenderApi.Vulkan &&
+                        FileTransaction.Same(game.Executable, application)))
                     {
-                        if (recognized)
-                        {
-                            inspectionError = "Cannot verify ReShade manifest: " + registration.Manifest;
-                        }
-                        continue;
-                    }
-
-                    recognized = true;
-                    competing |= !isDesired;
-                    string appsPath = Path.Combine(Path.GetDirectoryName(registration.Manifest)!, "ReShadeApps.ini");
-                    if (File.Exists(appsPath))
-                    {
-                        AddExternalConsumers(IniDocument.Split(IniDocument.Read(appsPath).Get("", "Apps")));
+                        consumers.Add(application);
                     }
                 }
-                catch (Exception error) when (error is JsonException or IOException or UnauthorizedAccessException
-                    or InvalidOperationException or KeyNotFoundException or ArgumentException)
-                {
-                    if (recognized)
-                    {
-                        inspectionError = registration.Manifest + ": " + error.Message;
-                    }
-                }
-            }
-
-            if (inspectionError != null)
-            {
-                return new(false, "Vulkan registration needs attention. Choose Apply / repair; see Activity.",
-                    consumers.Order(StringComparer.OrdinalIgnoreCase).ToArray(), inspectionError);
             }
 
             string[] applications = consumers.Order(StringComparer.OrdinalIgnoreCase).ToArray();
-            if (competing)
+            foreach (string view in new[] { "32", "64" })
             {
-                return new(false, "Another ReShade Vulkan layer is registered. Choose Apply / repair.", applications);
+                RegisteredLayer[] existing = layers.Where(layer => MatchesArchitecture(layer, view)).ToArray();
+                if (existing.Length == 0)
+                {
+                    return new(false, missing, applications);
+                }
+
+                if (!existing.Any(layer => layer.Registration.Kind == "Implicit" &&
+                    registry.Read(layer.Registration) == 0))
+                {
+                    return new(false,
+                        "An existing shared layer is disabled or explicit. Use its installer to enable it.", applications);
+                }
             }
 
-            if (desired.Any(registration => registry.Read(registration) != 0))
-            {
-                return new(false, notApplied, applications);
-            }
-
-            RuntimeService.ValidatePayload(state.Paths.Binaries(state.VulkanBuild), state.VulkanBuild);
-            return new(true, "Applied (x86 and x64).", applications);
+            bool external = layers.Any(layer => !state.VulkanLayerFiles.ContainsKey(layer.Registration.Manifest));
+            string message = external ? "Using existing shared layers. Their runtimes and registrations are retained." :
+                "Shared layer available (x86 and x64).";
+            return new(true, message, applications);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException
-            or InvalidOperationException or KeyNotFoundException or ArgumentException or NotSupportedException
-            or System.Security.SecurityException or System.ComponentModel.Win32Exception or BadImageFormatException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or
+            JsonException or
+            InvalidOperationException or KeyNotFoundException or ArgumentException or NotSupportedException or
+            System.Security.SecurityException or System.ComponentModel.Win32Exception or BadImageFormatException)
         {
-            return new(false, "Cannot verify the Vulkan layer. Update ReShade, then Apply / repair; see Activity.",
+            return new(false, "Cannot verify the existing Vulkan layer; see Activity. Its registration was retained.",
                 consumers.Order(StringComparer.OrdinalIgnoreCase).ToArray(), error.Message);
         }
     }
@@ -242,119 +237,150 @@ public sealed class VulkanService(ILayerRegistry registry)
 
     public void Enable(ManagerState state, FileTransaction transaction)
     {
+        List<RegisteredLayer> layers = RegisteredLayers();
         string binaries = state.Paths.Binaries(state.VulkanBuild);
-        string[] requiredFiles = ["ReShade32.dll", "ReShade64.dll", "ReShade32.json", "ReShade64.json"];
-        if (requiredFiles.Any(file => !File.Exists(Path.Combine(binaries, file))))
+        state.VulkanLayerDirectory ??= Path.Combine(state.Paths.Root, "Vulkan");
+        foreach (string view in new[] { "32", "64" })
         {
-            throw new InvalidOperationException("The Vulkan runtime is not installed completely. " +
-                "Open Runtime & storage > Update ReShade, then retry Vulkan > Apply / repair.");
-        }
-
-        RuntimeService.ValidatePayload(binaries);
-        List<LayerRegistration> desired = DesiredRegistrations(state);
-        foreach (LayerRegistration? item in registry.Enumerate().ToArray())
-        {
-            string? library;
-            try
+            RegisteredLayer[] existing = layers.Where(layer => MatchesArchitecture(layer, view)).ToArray();
+            if (existing.Length > 0)
             {
-                library = RecognizedLibrary(item.Manifest);
-            }
-            catch (Exception error) when (error is JsonException or IOException
-                or InvalidOperationException or KeyNotFoundException)
-            {
-                if (Path.GetFileName(item.Manifest).Contains("reshade", StringComparison.OrdinalIgnoreCase))
+                foreach (RegisteredLayer owned in existing.Where(layer =>
+                    state.VulkanLayerFiles.ContainsKey(layer.Registration.Manifest)))
                 {
-                    throw new InvalidDataException(
-                        "Existing ReShade registration needs attention: " + item.Manifest,
-                        error);
+                    UpdateOwnedLayer(state, owned.Registration.Manifest, binaries, view, transaction);
                 }
 
                 continue;
             }
 
-            if (library == null)
+            string manifest = Path.Combine(state.VulkanLayerDirectory, "ReShade" + view + ".json");
+            UpdateOwnedLayer(state, manifest, binaries, view, transaction);
+            var registration = new LayerRegistration("HKLM", view, manifest);
+            // Never rewrite an existing registry value, including a disabled registration.
+            if (registry.Read(registration) == null)
             {
-                if (state.OwnedRegistrations.Contains(item) ||
-                    Path.GetFileName(item.Manifest).StartsWith("ReShade", StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new IOException("Unverifiable ReShade Vulkan registration: " + item.Manifest);
-                }
-
-                continue;
-            }
-
-            // Capture the original installation without overwriting or deleting its files.
-            transaction.Capture(item.Manifest);
-            transaction.Capture(library);
-            string appsPath = Path.Combine(Path.GetDirectoryName(item.Manifest)!, "ReShadeApps.ini");
-            if (File.Exists(appsPath) && !state.OwnedRegistrations.Contains(item))
-            {
-                transaction.Capture(appsPath);
-                foreach (string app in IniDocument.Split(IniDocument.Read(appsPath).Get("", "Apps")))
-                {
-                    if (!state.Games.Any(game => game.Executable != null &&
-                        FileTransaction.Same(game.Executable, app)) &&
-                        !state.ExternalVulkanApps.Contains(app, StringComparer.OrdinalIgnoreCase))
-                    {
-                        state.ExternalVulkanApps.Add(app);
-                    }
-                }
-            }
-
-            if (!desired.Any(expected => SameRegistration(expected, item)))
-            {
-                transaction.SetRegistry(item, null);
+                transaction.SetRegistry(registration, 0);
             }
         }
 
-        foreach (LayerRegistration item in desired)
-        {
-            transaction.SetRegistry(item, 0);
-        }
-
-        state.OwnedRegistrations = desired;
         state.VulkanManaged = true;
         WriteApps(state, transaction);
     }
 
-    public void WriteApps(ManagerState state, FileTransaction transaction)
+    private static void UpdateOwnedLayer(
+        ManagerState state,
+        string manifest,
+        string binaries,
+        string view,
+        FileTransaction transaction)
     {
-        string binaries = state.Paths.Binaries(state.VulkanBuild);
-        var apps = new IniDocument();
-        apps.Set(
-            "",
-            "Apps",
-            IniDocument.Join(state.ExternalVulkanApps.Concat(state.Games.Where(game => game.Api == RenderApi.Vulkan &&
-                        game.Executable != null)
-                    .Select(game => game.Executable!))
-                .Distinct(StringComparer.OrdinalIgnoreCase)));
-        transaction.WriteText(Path.Combine(binaries, "ReShadeApps.ini"), apps.ToString());
+        if (new[] { "ReShade32.dll", "ReShade64.dll", "ReShade32.json", "ReShade64.json" }
+            .Any(name => !File.Exists(Path.Combine(binaries, name))))
+        {
+            throw new InvalidOperationException("The Vulkan runtime is not installed completely. " +
+                "Open Runtime & storage > Update ReShade, then retry Apply / repair.");
+        }
+
+        RuntimeService.ValidatePayload(binaries, state.VulkanBuild);
+        string directory = Path.GetDirectoryName(manifest)!;
+        foreach (string extension in new[] { ".dll", ".json" })
+        {
+            string name = "ReShade" + view + extension;
+            string target = Path.Combine(directory, name);
+            FileTransaction.CheckParents(target);
+            if (FileTransaction.Link(target) != null || (File.Exists(target) &&
+                (!state.VulkanLayerFiles.TryGetValue(target, out string? hash) ||
+                FileTransaction.Hash(target) != hash)))
+            {
+                throw new IOException("Shared layer file was changed outside this app; preserving it: " + target);
+            }
+
+            string source = Path.Combine(binaries, name);
+            string sourceHash = FileTransaction.Hash(source);
+            if (!File.Exists(target) || FileTransaction.Hash(target) != sourceHash)
+            {
+                transaction.Copy(source, target);
+            }
+
+            state.VulkanLayerFiles[target] = sourceHash;
+        }
     }
 
-    public void RemoveIfUnused(ManagerState state, FileTransaction transaction)
+    public void WriteApps(
+        ManagerState state,
+        FileTransaction transaction,
+        bool enroll = true)
     {
-        if (!state.VulkanManaged || state.Games.Any(game => game.Api == RenderApi.Vulkan) ||
-            state.ExternalVulkanApps.Count > 0)
+        var desired = new List<VulkanAppEntry>();
+        if (enroll)
         {
-            return;
+            List<RegisteredLayer> layers = RegisteredLayers();
+            foreach (GameProfile game in state.Games.Where(game =>
+                game.Api == RenderApi.Vulkan))
+            {
+                string view = game.Architecture == CpuArchitecture.X86 ? "32" : "64";
+                RegisteredLayer? layer = layers.Where(layer => MatchesArchitecture(layer, view))
+                    .OrderByDescending(layer => layer.Registration.Kind == "Implicit" &&
+                        registry.Read(layer.Registration) == 0)
+                    .FirstOrDefault();
+                if (layer != null)
+                {
+                    desired.Add(new(AppsPath(layer), game.Executable));
+                }
+            }
+        }
+        else
+        {
+            desired.AddRange(state.OwnedVulkanApps.Where(entry => state.Games.Any(game =>
+                game.Api == RenderApi.Vulkan &&
+                FileTransaction.Same(game.Executable, entry.Executable))));
         }
 
-        foreach (LayerRegistration item in state.OwnedRegistrations)
+        VulkanAppEntry[] owned = state.OwnedVulkanApps.Distinct().ToArray();
+        var nextOwned = new List<VulkanAppEntry>();
+        IEnumerable<string> paths = owned.Concat(desired).Select(entry => entry.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (string path in paths)
         {
-            if (registry.Read(item) == null)
+            var document = IniDocument.Read(path);
+            string[] original = IniDocument.Split(document.Get("", "Apps"));
+            var applications = original.ToList();
+            foreach (VulkanAppEntry entry in owned.Where(entry => FileTransaction.Same(entry.Path, path)))
             {
-                continue;
+                bool keep = desired.Any(item => FileTransaction.Same(item.Path, path) &&
+                    FileTransaction.Same(item.Executable, entry.Executable));
+                if (keep)
+                {
+                    nextOwned.Add(entry);
+                }
+                else
+                {
+                    applications.RemoveAll(application => FileTransaction.Same(application, entry.Executable));
+                }
             }
 
-            if (RecognizedLibrary(item.Manifest) == null)
+            foreach (VulkanAppEntry entry in desired.Where(entry => FileTransaction.Same(entry.Path, path)))
             {
-                throw new IOException("Owned Vulkan registration was replaced externally.");
+                if (!applications.Contains(entry.Executable, StringComparer.OrdinalIgnoreCase))
+                {
+                    applications.Add(entry.Executable);
+                    nextOwned.Add(entry);
+                }
             }
 
-            transaction.SetRegistry(item, null);
+            if (!original.SequenceEqual(applications))
+            {
+                if (FileTransaction.Link(path) != null)
+                {
+                    throw new IOException("Application list is an unmanaged symbolic link: " + path);
+                }
+
+                document.Set("", "Apps", IniDocument.Join(applications));
+                transaction.WriteText(path, document.ToString());
+            }
         }
 
-        state.OwnedRegistrations.Clear();
-        state.VulkanManaged = false;
+        state.OwnedVulkanApps = nextOwned.Distinct().ToList();
     }
 }
