@@ -85,6 +85,14 @@ internal static partial class TestSuite
         testRoot = Path.Combine(repositoryRoot, ".validation", "tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(testRoot);
         Console.WriteLine("Isolated test workspace: " + testRoot);
+        await RunTestAsync("Explicit Vulkan removal preserves other installers' entries and runtime files",
+            VulkanRemovalPreservesOtherRegistrationsAndFilesAsync);
+        await RunTestAsync("Last Vulkan unregister keeps shared support and standalone consumers",
+            LastVulkanUnregisterPreservesStandaloneConsumersAsync);
+        await RunTestAsync("Vulkan removal preserves disabled, changed, linked and unowned registrations",
+            VulkanRemovalPreservesChangedAndUnownedEntriesAsync);
+        await RunTestAsync("Vulkan removal rolls back failures and recovers interrupted registry changes",
+            VulkanRemovalRollsBackAndRecoversRegistryChangesAsync);
         await RunTestAsync("Shader selection installs, updates, removes custom package files and rechecks review",
             ShaderSelectionInstallsUpdatesAndRemovesAsync);
         await RunTestAsync("Failed removals retain required dependencies and unchecked intent across restart",

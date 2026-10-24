@@ -81,7 +81,7 @@ internal static partial class TestSuite
         game.Api = RenderApi.Vulkan;
         await manager.InstallAsync(game, None);
         Dictionary<LayerRegistration, int> original = registry.Values.ToDictionary();
-        AssertTrue(original.Count == 2);
+        AssertTrue(original.Count == 2 && manager.State!.OwnedVulkanRegistrations.Count == 2);
         string layerDirectory = manager.State!.VulkanLayerDirectory!;
         string apps = Path.Combine(layerDirectory, "ReShadeApps.ini");
         string external = Path.Combine(directory, "external-app.exe");

@@ -100,7 +100,7 @@ public sealed class WindowsLayerRegistry(string registryRoot = @"SOFTWARE\Khrono
     }
 }
 
-public sealed class VulkanService(ILayerRegistry registry)
+public sealed partial class VulkanService(ILayerRegistry registry)
 {
     private sealed record RegisteredLayer(LayerRegistration Registration, string Library);
 
@@ -194,7 +194,7 @@ public sealed class VulkanService(ILayerRegistry registry)
                 }
             }
 
-            bool external = layers.Any(layer => !state.VulkanLayerFiles.ContainsKey(layer.Registration.Manifest));
+            bool external = layers.Any(layer => !OwnsRegistration(state, layer.Registration));
             string message = external ? "Using existing shared layers. Their runtimes and registrations are retained." :
                 "Shared layer available (x86 and x64).";
             return new(true, message, applications);
@@ -246,7 +246,7 @@ public sealed class VulkanService(ILayerRegistry registry)
             if (existing.Length > 0)
             {
                 foreach (RegisteredLayer owned in existing.Where(layer =>
-                    state.VulkanLayerFiles.ContainsKey(layer.Registration.Manifest)))
+                    OwnsRegistration(state, layer.Registration) && registry.Read(layer.Registration) == 0))
                 {
                     UpdateOwnedLayer(state, owned.Registration.Manifest, binaries, view, transaction);
                 }
@@ -261,6 +261,10 @@ public sealed class VulkanService(ILayerRegistry registry)
             if (registry.Read(registration) == null)
             {
                 transaction.SetRegistry(registration, 0);
+                if (!OwnsRegistration(state, registration))
+                {
+                    state.OwnedVulkanRegistrations.Add(registration);
+                }
             }
         }
 

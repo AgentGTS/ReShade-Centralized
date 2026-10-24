@@ -204,6 +204,7 @@ public sealed class ManagerState
 
     public string? VulkanLayerDirectory { get; set; }
     public Dictionary<string, string> VulkanLayerFiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<LayerRegistration> OwnedVulkanRegistrations { get; set; } = [];
     public List<VulkanAppEntry> OwnedVulkanApps { get; set; } = [];
     public static JsonSerializerOptions Json { get; } = new()
     {

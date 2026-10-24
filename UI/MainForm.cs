@@ -515,6 +515,9 @@ public sealed class MainForm : Form
         Button applyVulkan = CreateActionButton("Apply / repair", OnApplyRepairVulkanAsync);
         vulkanCommands.Controls.Add(vulkanBuildSelector);
         vulkanCommands.Controls.Add(applyVulkan);
+        vulkanCommands.Controls.Add(CreateActionButton("Remove app-owned layers...", OnRemoveVulkanLayersAsync,
+            isAvailable: () => manager.State is { OwnedVulkanRegistrations.Count: > 0 } state &&
+                !state.Games.Any(game => game.Api == RenderApi.Vulkan)));
         vulkanCommands.Layout += (_, _) =>
         {
             int heightDifference = applyVulkan.Height - vulkanBuildSelector.Height;
@@ -923,6 +926,30 @@ public sealed class MainForm : Form
         return RunOperationAsync(
             "Updating ReShade",
             cancellationToken => manager.UpdateRuntimeAsync(progress, cancellationToken));
+    }
+
+    private async Task OnRemoveVulkanLayersAsync()
+    {
+        if (MessageBox.Show(this,
+            "Remove this app's shared Vulkan layer registrations?\n\n" +
+            "Games outside the app that share this layer may lose ReShade. " +
+            "Removal is blocked if games are still recorded as using it. " +
+            "Other installers' registrations and all runtime files will be kept.",
+            "Remove app-owned Vulkan layers", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Removing app-owned Vulkan layers", async cancellationToken =>
+        {
+            VulkanRemovalResult result = await manager.RemoveVulkanSupportAsync(cancellationToken);
+            WriteLog($"Removed {result.Removed.Count} app-owned Vulkan layer registrations. Runtime files were kept.");
+            foreach (string preserved in result.Preserved)
+            {
+                WriteLog("Kept: " + preserved);
+            }
+        });
     }
 
     private Task OnApplyRepairVulkanAsync()

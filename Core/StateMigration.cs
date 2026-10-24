@@ -82,7 +82,8 @@ internal static class StateMigration
         {
             EnsureObject(document, key, changes);
         }
-        foreach (string key in new[] { "Games", "Packages", "SelectedPackages", "OwnedVulkanApps" })
+        foreach (string key in new[] { "Games", "Packages", "SelectedPackages", "OwnedVulkanApps",
+            "OwnedVulkanRegistrations" })
         {
             EnsureArray(document, key, changes);
         }

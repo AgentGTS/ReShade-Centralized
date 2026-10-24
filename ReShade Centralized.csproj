@@ -13,7 +13,7 @@
     <RootNamespace>ReShade_Centralized</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>00045-3601538189.ico</ApplicationIcon>
-    <Version>1.0.0-beta.4</Version>
+    <Version>1.0.0-beta.5</Version>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>

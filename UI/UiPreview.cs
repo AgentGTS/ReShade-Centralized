@@ -477,6 +477,18 @@ internal static partial class UiPreview
             {
                 throw new InvalidOperationException("Installed shaders must show their checked and installed states separately.");
             }
+            VerifyButtonStates(main, false, "Remove app-owned layers...");
+            state.OwnedVulkanRegistrations.Add(new("HKLM", "64",
+                Path.Combine(state.Paths.Root, "Vulkan", "ReShade64.json")));
+            refresh.Invoke(main, null);
+            VerifyButtonStates(main, true, "Remove app-owned layers...");
+            state.Games[0].Api = RenderApi.Vulkan;
+            refresh.Invoke(main, null);
+            VerifyButtonStates(main, false, "Remove app-owned layers...");
+            state.Games[0].Api = RenderApi.DXGI;
+            state.OwnedVulkanRegistrations.Clear();
+            refresh.Invoke(main, null);
+            installed = packages.Rows.Cast<DataGridViewRow>().Single(row => ((ShaderPackage)row.Tag!).Id == optional.Id);
             installed.Cells["Selected"].Value = false;
             search.Text = "__hidden_selection__";
             search.Clear();

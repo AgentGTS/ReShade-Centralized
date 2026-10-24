@@ -23,6 +23,8 @@ If an existing game appears under Runtime & storage > Vulkan games without the (
 To change the Vulkan build later, close your Vulkan games, change it under Runtime & storage and choose Apply / repair. This changes shared layers installed by this app. Layers from another installer keep their existing build; use that installer to change it.
 Check the Vulkan status before launching. If it says an existing layer is disabled or explicit, use that layer's installer to enable it; Apply / repair will not override it.
 Unregister removes this app's setup for the selected game. The shared Vulkan layer stays installed.
+Vulkan games share the layer's registry entries; each game's ReShade.ini enables its own setup. A game does not need its own registry entry.
+After unregistering all Vulkan games, Remove app-owned layers removes only registrations created by this app. It refuses removal while other games are recorded as using them. Other installers' registrations and runtime files are kept. Games not recorded in the application list may also share the layer, so keep it if unsure.
 
 EVERYDAY USE
 

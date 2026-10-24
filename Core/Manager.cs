@@ -354,6 +354,17 @@ public sealed partial class Manager : IDisposable
         }, cancellationToken);
     }
 
+    public async Task<VulkanRemovalResult> RemoveVulkanSupportAsync(CancellationToken cancellationToken)
+    {
+        VulkanRemovalResult? result = null;
+        await ChangeStateAsync("Remove app-owned Vulkan layer registrations", (updatedState, transaction) =>
+        {
+            result = vulkan.RemoveOwnedRegistrations(updatedState, transaction);
+            return Task.CompletedTask;
+        }, cancellationToken);
+        return result!;
+    }
+
     public Task RepairAsync(IProgress<string>? progress, CancellationToken cancellationToken)
     {
         return ChangeStateAsync("Repair managed links and configuration", (updatedState, transaction) =>
