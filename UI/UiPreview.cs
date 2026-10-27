@@ -42,6 +42,7 @@ internal static partial class UiPreview
         Application.DoEvents();
         VerifyPackageSelection(main);
         VerifyShaderSelectionModes(main);
+        VerifyFilteredShaderSelections(main);
         VerifyButtonStates(main, false, "Repair / edit...", "Unregister", "Open profile", "Open game folder", "Repair all",
             "Purge shader folder...", "Manage game...");
 
