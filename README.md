@@ -44,16 +44,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Publish.ps1
 
 Release files are written to `artifacts`.
 
-UI smoke checks and screenshot previews live in the optional [UiTests](UiTests/README.md) project.
-They are excluded from the main solution, normal app builds, CI, and releases. Run them explicitly when needed:
-
-```powershell
-dotnet run --project UiTests/ReShadeCentralized.UiTests.csproj -c Release
-```
-
-You can build and publish the app without maintaining the UI checks. If app changes break a check,
-update it when you next choose to run this project.
-
 ## Credits and license
 
 - [OopyDoopy](https://github.com/OopyDoopy/ReShade-Centralized): original ReShade Centralized.

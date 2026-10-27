@@ -20,6 +20,5 @@ The runner uses disposable storage, simulated downloads and registry fixtures fo
 It does not install into real games or change real Vulkan registrations. Exit checks launch disposable copies
 of this runner and deliberately terminate only those processes to verify recovery.
 
-The production executable no longer accepts preview/smoke-test commands. Test entry points, fixture data,
-screenshots and shutdown-probe launching are contained in this project. It retains access to app internals
+Test entry points, fixture data, screenshots and shutdown-probe launching are contained in this project. It retains access to app internals
 through `InternalsVisibleTo`; the app has no dependency on the runner.
