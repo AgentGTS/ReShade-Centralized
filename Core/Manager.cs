@@ -457,7 +457,7 @@ public sealed partial class Manager : IDisposable
                     report.FailedCount++;
                     Report($"Skipped {package.Name}: required packages are unavailable: " +
                         string.Join(", ", missingDependencies.Select(dependency => dependency.Name)) +
-                        ". In Shader packages, select those packages and retry Update selected. " +
+                        ". In Shader packages, select those packages and apply the selection again. " +
                         "Existing files were retained.");
                     continue;
                 }
@@ -568,7 +568,7 @@ public sealed partial class Manager : IDisposable
                     ". " + error.Message);
             }
 
-            progress?.Report("Central shader folder purged. Choose Update selected to reinstall packages.");
+            progress?.Report("Central shader folder purged. Choose Apply selection to reinstall packages.");
             return Task.CompletedTask;
         }, cancellationToken);
     }
@@ -659,7 +659,7 @@ public sealed partial class Manager : IDisposable
                 "The package archive is invalid or unsupported. Open Shader packages > Refresh catalog, " +
                 "then retry. Details: " + error.Message : UserErrors.Describe(error);
             return (false, $"Failed {package.Name}: {explanation}\n" +
-                "Existing files were retained. Retry this package in Shader packages > Update selected. " +
+                "Existing files were retained. In Shader packages, select this package and apply the selection again. " +
                 $"Repository: {package.Repository}");
         }
         finally

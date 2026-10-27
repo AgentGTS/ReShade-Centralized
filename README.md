@@ -7,7 +7,7 @@ Shared ReShade runtimes and shaders, with per-game presets. Windows 10/11 x64.
 1. Extract the release and run **ReShade Centralized.exe** as administrator. .NET is included.
 2. Keep the default central folder (`Documents\ReShade Centralized`) or choose a folder outside the app folder.
 3. Choose **Runtime & storage > Update ReShade**.
-4. In **Shader packages**, select packages and choose **Update selected**.
+4. In **Shader packages**, select packages and choose **Apply selection**.
 
 For example, to install for a DirectX 11 game:
 
@@ -30,7 +30,7 @@ Requires Windows and the .NET 10 SDK.
 
 ### Debug
 
-Double-click **BuildRunDebug.bat** to build and run in one elevated console with live logs. It waits for a keypress if the build fails and closes when the app exits.
+Double-click **BuildRunDebug.bat** to build and run in console with live logs.
 
 ### Release
 

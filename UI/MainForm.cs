@@ -108,6 +108,7 @@ public sealed class MainForm : Form
     private readonly HashSet<string> selectedPackageIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<(Button Button, Func<bool> IsAvailable)> actionAvailability = [];
     private readonly IProgress<string> progress;
+    private Button? applySelectionButton;
     private List<ShaderPackage> catalog = [];
     private CancellationTokenSource? operationCancellation;
     private string? lastVulkanInspectionError;
@@ -172,6 +173,13 @@ public sealed class MainForm : Form
         BuildGames();
         BuildPackages();
         BuildSettings();
+        tabs.Deselected += (_, e) =>
+        {
+            if (e.TabPageIndex == 1 && operationCancellation == null)
+            {
+                ResetPackageChoices();
+            }
+        };
         tabs.SelectedIndexChanged += (_, _) =>
         {
             if (tabs.SelectedIndex == 2 && operationCancellation == null)
@@ -258,6 +266,13 @@ public sealed class MainForm : Form
         foreach ((Button button, Func<bool> isAvailable) in actionAvailability)
         {
             button.Enabled = isAvailable();
+        }
+
+        if (applySelectionButton != null)
+        {
+            bool updateOnly = selectedPackageIds.Count > 0 && manager.State != null &&
+                selectedPackageIds.SetEquals(manager.State.Packages.Select(package => package.Id));
+            applySelectionButton.Text = updateOnly ? "Update selected" : "Apply selection";
         }
     }
 
@@ -370,9 +385,10 @@ public sealed class MainForm : Form
         FlowLayoutPanel commands = CreateCommandBar();
         commands.WrapContents = true;
         commands.Margin = new Padding(0, 12, 0, 0);
-        commands.Controls.Add(CreateActionButton(
-            "Update selected", OnInstallUpdateSelectedAsync, primary: true,
-            isAvailable: () => selectedPackageIds.Count > 0));
+        applySelectionButton = CreateActionButton(
+            "Apply selection", OnApplyShaderSelectionAsync, primary: true,
+            isAvailable: () => selectedPackageIds.Count > 0 || manager.State is { Packages.Count: > 0 });
+        commands.Controls.Add(applySelectionButton);
         commands.Controls.Add(CreateActionButton("Refresh catalog", OnRefreshCatalogAsync));
         commands.Controls.Add(CreateActionButton("Purge shader folder...", OnPurgeShaderFolderAsync,
             isAvailable: () => manager.State != null));
@@ -439,7 +455,14 @@ public sealed class MainForm : Form
         UpdateActionAvailability();
     }
 
-    private async Task UpdatePackagesAsync()
+    private void ResetPackageChoices()
+    {
+        packageList.CancelEdit();
+        SynchronizePackageChoices();
+        FilterPackages();
+    }
+
+    private async Task ApplyPackagesAsync()
     {
         packageList.EndEdit();
         List<ShaderPackage> packages = AvailablePackages();
@@ -447,7 +470,7 @@ public sealed class MainForm : Form
             packages.Where(package => selectedPackageIds.Contains(package.Id)).ToArray(), packages);
         try
         {
-            await RunOperationAsync("Updating shader selection", async cancellationToken =>
+            await RunOperationAsync("Applying shader selection", async cancellationToken =>
             {
                 PackageUpdateReport report = await manager.ApplyShaderSelectionAsync(
                     plan, packages, progress, cancellationToken, removalsConfirmed: true);
@@ -456,7 +479,7 @@ public sealed class MainForm : Form
                 {
                     tabs.SelectedIndex = 3;
                     MessageBox.Show(this, report.Summary +
-                        "\n\nCompleted changes were kept. Check Activity for failures, then retry Update selected.",
+                        "\n\nCompleted changes were kept. Check Activity for failures, then apply the selection again.",
                         "Shader packages", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }, reportCompletion: false);
@@ -891,26 +914,27 @@ public sealed class MainForm : Form
 
     private Task OnRefreshCatalogAsync()
     {
+        ResetPackageChoices();
         return RunOperationAsync("Refreshing catalog", async cancellationToken =>
         {
             catalog = await manager.Shaders.CatalogAsync(progress, cancellationToken);
-            ExpandShaderDependencies();
-            FilterPackages();
+            ResetPackageChoices();
         });
     }
 
-    private Task OnInstallUpdateSelectedAsync()
+    private Task OnApplyShaderSelectionAsync()
     {
-        return UpdatePackagesAsync();
+        return ApplyPackagesAsync();
     }
 
     private async Task OnPurgeShaderFolderAsync()
     {
         string root = RequireState().Paths.ShaderRoot;
+        ResetPackageChoices();
         DialogResult answer = MessageBox.Show(this,
             "Delete all central shaders and textures, including custom and unmanaged files?\n\n" + root +
             "\n\nPresets, profiles and game-local shaders will be kept. Close affected games first. " +
-            "After purging, choose Update selected to reinstall your selected packages.",
+            "After purging, choose Apply selection to reinstall your selected packages.",
             "Purge shader folder", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (answer != DialogResult.Yes)
         {
@@ -919,6 +943,7 @@ public sealed class MainForm : Form
 
         await RunOperationAsync("Purging central shader folder",
             cancellationToken => manager.PurgeShaderFolderAsync(progress, cancellationToken));
+        ResetPackageChoices();
     }
 
     private Task OnUpdateReShadeAsync()

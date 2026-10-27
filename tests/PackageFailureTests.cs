@@ -74,7 +74,7 @@ internal static partial class TestSuite
         AssertTrue(report.Messages.Any(message => message.Contains("timed out")));
         AssertTrue(report.Messages.Any(message => message.Contains("Refresh catalog")));
         AssertTrue(report.Messages.Where(message => message.StartsWith("Failed "))
-            .All(message => message.Contains("Update selected")));
+            .All(message => message.Contains("apply the selection again")));
         AssertTrue(!Directory.EnumerateDirectories(store.Staging).Any());
     }
 

@@ -2,7 +2,7 @@ GETTING STARTED
 
 Run ReShade Centralized as administrator. Keep the default storage folder, Documents\ReShade Centralized, or choose a folder outside the app folder. Keep it at the same location and available when playing.
 1. Choose Runtime & storage > Update ReShade.
-2. In Shader packages, select packages and choose Update selected.
+2. In Shader packages, select packages and choose Apply selection.
 3. Choose Games > Install game. Select the actual game executable, not its launcher, and choose its graphics API and build. Review the changes, check the replacement confirmation if shown, then choose Install. Use the Vulkan steps below for Vulkan games.
 4. Launch the game. Press Home to open ReShade's overlay unless you have changed its shortcut, then select effects and save a preset.
 
@@ -29,13 +29,13 @@ After unregistering all Vulkan games, Remove app-owned layers removes only regis
 EVERYDAY USE
 
 - Update ReShade: Runtime & storage > Update ReShade. Close affected games first.
-- Shader packages: check packages to install or update; uncheck installed packages to remove them. Update selected applies the changes without another prompt. Removal also deletes custom files inside those packages. Required packages and dependencies of selected packages cannot be unchecked. Status shows what is currently installed; Incomplete means files are missing or cannot be verified. Refresh catalog updates the available package list.
-- Reset shader packages: close affected games, choose Shader packages > Purge shader folder, then Update selected. This deletes all central shaders and textures, including custom files. Presets and game-local shaders are kept.
+- Shader packages: check packages to install or update; uncheck installed packages to remove them. Yellow "will be added" and red "will be removed" status text show pending changes. Removal also deletes custom files inside those packages. Required packages and dependencies of selected packages cannot be unchecked. Status shows Installed, Not installed or Incomplete; Incomplete means files are missing or cannot be verified. Refresh catalog updates the available package list.
+- Reset shader packages: close affected games, choose Shader packages > Purge shader folder, then Apply selection. This deletes all central shaders and textures, including custom files. Presets and game-local shaders are kept.
 - Find presets and settings: select a game > Open profile.
 - A yellow icon beside a game means its setup needs attention. Hover for details, then check the game folder or use Repair / edit.
 - Change an executable, API, or build: select a game > Repair / edit. Use Repair all to repair all listed games.
 - Remove this app's ReShade setup from a game: select it > Unregister. Presets, local shaders and files replaced by other tools are kept. Check Activity for files left behind.
-- If a shader update fails or is cancelled, completed changes are kept. Check Activity, adjust the selection if needed, and retry Update selected.
+- If a shader update fails or is cancelled, completed changes are kept. Check Activity, adjust the selection if needed, and apply the selection again.
 
 EXISTING SHADERS AND PRESETS
 
@@ -54,7 +54,7 @@ COMMON PROBLEMS
 - Storage cannot be opened: choose another folder or restore your own backup. To reuse the default location, unregister affected games, delete Documents\ReShade Centralized and select it again in Setup. Deleting it loses its settings, presets and shaders.
 - ReShade does not load: check the executable and API, run Update ReShade, then close the game and use Repair / edit. For Vulkan, also use Runtime & storage > Apply / repair. Some games block ReShade.
 - Download fails: check your connection and retry. For runtimes, download matching standard and add-on-support installers from https://reshade.me and use Runtime & storage > Import downloaded installers. Select the standard installer first.
-- Shader update reports changed, missing or unmanaged files: keep a copy of custom shaders, then restore the original package files or use Purge shader folder followed by Update selected. Purging resets all central shader packages, not just the failed one.
+- Shader update reports changed, missing or unmanaged files: keep a copy of custom shaders, then restore the original package files or use Purge shader folder followed by Apply selection. Purging resets all central shader packages, not just the failed one.
 - Access denied or file in use: close games and other ReShade installers, run as administrator, check folder permissions, and retry.
 - Existing installation or file conflict: check the path in the warning. Keep a copy of custom files before replacing or removing them, then retry.
 - Repair all stops at a file conflict and makes no repairs. Use Repair / edit on the affected game to review any replacements, then retry Repair all.

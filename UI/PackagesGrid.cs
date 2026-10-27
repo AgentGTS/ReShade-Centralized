@@ -31,7 +31,8 @@ internal sealed class PackagesGrid : DataGridView
         Columns.Add(new DataGridViewTextBoxColumn
         {
             Name = "Status", HeaderText = "Status", ReadOnly = true,
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+            Resizable = DataGridViewTriState.False,
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
         CurrentCellDirtyStateChanged += (_, _) =>
@@ -49,6 +50,46 @@ internal sealed class PackagesGrid : DataGridView
                 PackageChecked?.Invoke(package, Rows[e.RowIndex].Cells["Selected"].Value is true);
             }
         };
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        UpdateStatusColumnWidth();
+    }
+
+    protected override void OnFontChanged(EventArgs e)
+    {
+        base.OnFontChanged(e);
+        UpdateStatusColumnWidth();
+    }
+
+    protected override void OnDefaultCellStyleChanged(EventArgs e)
+    {
+        base.OnDefaultCellStyleChanged(e);
+        UpdateStatusColumnWidth();
+    }
+
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        UpdateStatusColumnWidth();
+    }
+
+    private void UpdateStatusColumnWidth()
+    {
+        if (Columns["Status"] is not DataGridViewColumn status)
+        {
+            return;
+        }
+
+        string[] statuses =
+        [
+            "Not installed (will be added)", "Installed (will be removed)", "Incomplete (will be removed)"
+        ];
+        Font statusFont = DefaultCellStyle.Font ?? Font;
+        int textWidth = statuses.Max(text => TextRenderer.MeasureText(text, statusFont).Width);
+        status.Width = textWidth + DefaultCellStyle.Padding.Horizontal + LogicalToDeviceUnits(8);
     }
 
     protected override void OnCellPainting(DataGridViewCellPaintingEventArgs e)
@@ -82,6 +123,7 @@ internal sealed class PackagesGrid : DataGridView
                     ? "Installed" : "Incomplete";
                 int row = Rows.Add(selected.Contains(package.Id), package.ToString(), status);
                 Rows[row].Tag = package;
+                Rows[row].Cells["Status"].Tag = installed == null ? null : status;
             }
         }
         finally
@@ -104,6 +146,23 @@ internal sealed class PackagesGrid : DataGridView
                 row.Cells["Selected"].Value = selected.Contains(package.Id);
                 row.Cells["Selected"].ReadOnly = needed;
                 row.Cells["Selected"].ToolTipText = needed ? "Required by the selected packages" : "";
+                DataGridViewCell status = row.Cells["Status"];
+                Color statusColor = Color.Empty;
+                string statusText = "Not installed";
+                if (status.Tag is string installedStatus)
+                {
+                    bool pendingRemoval = !selected.Contains(package.Id);
+                    statusText = pendingRemoval ? $"{installedStatus} (will be removed)" : installedStatus;
+                    statusColor = pendingRemoval ? DarkTheme.Danger : Color.Empty;
+                }
+                else if (selected.Contains(package.Id))
+                {
+                    statusText = "Not installed (will be added)";
+                    statusColor = DarkTheme.Warning;
+                }
+                status.Value = statusText;
+                status.Style.ForeColor = statusColor;
+                status.Style.SelectionForeColor = statusColor;
             }
         }
         finally

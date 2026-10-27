@@ -41,6 +41,7 @@ internal static partial class UiPreview
         main.Show();
         Application.DoEvents();
         VerifyPackageSelection(main);
+        VerifyShaderSelectionModes(main);
         VerifyButtonStates(main, false, "Repair / edit...", "Unregister", "Open profile", "Open game folder", "Repair all",
             "Purge shader folder...", "Manage game...");
 
@@ -409,7 +410,7 @@ internal static partial class UiPreview
             throw new InvalidOperationException("Package filtering did not update the themed list.");
         }
 
-        VerifyButtonStates(main, true, "Update selected");
+        VerifyButtonStates(main, true, "Apply selection");
 
         search.Clear();
         if (initialCount == 0 || packages.Rows.Count != initialCount)
@@ -429,6 +430,144 @@ internal static partial class UiPreview
             !packages.Rows[required].Cells["Selected"].ReadOnly)
         {
             throw new InvalidOperationException("A required package was deselected.");
+        }
+    }
+
+    private static void VerifyShaderSelectionModes(MainForm main)
+    {
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.NonPublic;
+        var manager = (Manager)typeof(MainForm).GetField("manager", flags)!.GetValue(main)!;
+        System.Reflection.PropertyInfo stateProperty = typeof(Manager).GetProperty(nameof(Manager.State))!;
+        System.Reflection.MethodInfo filter = typeof(MainForm).GetMethod("FilterPackages", flags)!;
+        var choices = (HashSet<string>)typeof(MainForm).GetField("selectedPackageIds", flags)!.GetValue(main)!;
+        string[] originalChoices = choices.ToArray();
+        ManagerState? originalState = manager.State;
+        PackagesGrid grid = Descendants(main).OfType<PackagesGrid>().Single();
+        DataGridViewColumn statusColumn = grid.Columns["Status"]!;
+        int statusWidth = statusColumn.Width;
+        if (statusColumn.AutoSizeMode != DataGridViewAutoSizeColumnMode.None ||
+            statusColumn.Resizable != DataGridViewTriState.False ||
+            statusWidth < TextRenderer.MeasureText("Incomplete (will be removed)", grid.Font).Width +
+                grid.DefaultCellStyle.Padding.Horizontal)
+        {
+            throw new InvalidOperationException("The status column must be locked wide enough for its longest text.");
+        }
+        TabControl tabs = Descendants(main).OfType<TabControl>().Single();
+        int originalTab = tabs.SelectedIndex;
+        ShaderPackage[] packages = grid.Rows.Cast<DataGridViewRow>().Select(row => (ShaderPackage)row.Tag!).ToArray();
+        ShaderPackage[] optional = packages.Where(package => !package.Required).Take(2).ToArray();
+        var state = new ManagerState
+        {
+            Paths = CentralPaths.At(Path.Combine(AppContext.BaseDirectory, "selection-preview"))
+        };
+        state.Packages = packages.Where(package => package.Required || package.Id == optional[0].Id)
+            .Select(package => new InstalledPackage { Id = package.Id, Name = package.Name }).ToList();
+        TextBox search = Descendants(main).OfType<TextBox>()
+            .Single(control => control.AccessibleName == "Search shader packages");
+
+        DataGridViewRow PackageRow(string id) => grid.Rows.Cast<DataGridViewRow>()
+            .Single(row => ((ShaderPackage)row.Tag!).Id == id);
+
+        void VerifyStatus(string id, string text, Color color)
+        {
+            DataGridViewCell status = PackageRow(id).Cells["Status"];
+            if (!Equals(status.Value, text) || status.Style.ForeColor != color ||
+                status.Style.SelectionForeColor != color || statusColumn.Width != statusWidth)
+            {
+                throw new InvalidOperationException($"Unexpected selection status for {id}: {status.Value}.");
+            }
+        }
+
+        try
+        {
+            stateProperty.SetValue(manager, state);
+            choices.Clear();
+            choices.UnionWith(state.Packages.Select(package => package.Id));
+            filter.Invoke(main, null);
+            VerifyButtonStates(main, true, "Update selected");
+            VerifyStatus(optional[1].Id, "Not installed", Color.Empty);
+
+            PackageRow(optional[1].Id).Cells["Selected"].Value = true;
+            VerifyButtonStates(main, true, "Apply selection");
+            VerifyStatus(optional[1].Id, "Not installed (will be added)", DarkTheme.Warning);
+            PackageRow(optional[0].Id).Cells["Selected"].Value = false;
+            VerifyStatus(optional[0].Id, "Incomplete (will be removed)", DarkTheme.Danger);
+            search.Text = "__hidden_selection__";
+            VerifyButtonStates(main, true, "Apply selection");
+            search.Clear();
+            VerifyStatus(optional[0].Id, "Incomplete (will be removed)", DarkTheme.Danger);
+            VerifyStatus(optional[1].Id, "Not installed (will be added)", DarkTheme.Warning);
+
+            PackageRow(optional[1].Id).Cells["Selected"].Value = false;
+            VerifyStatus(optional[1].Id, "Not installed", Color.Empty);
+            VerifyButtonStates(main, true, "Apply selection");
+            PackageRow(optional[0].Id).Cells["Selected"].Value = true;
+            VerifyStatus(optional[0].Id, "Incomplete", Color.Empty);
+            VerifyButtonStates(main, true, "Update selected");
+            search.Text = "__hidden_selection__";
+            VerifyButtonStates(main, true, "Update selected");
+            search.Clear();
+
+            state.Packages.Add(new InstalledPackage { Id = "catalog-missing", Name = "Recorded package" });
+            filter.Invoke(main, null);
+            VerifyButtonStates(main, true, "Apply selection");
+            VerifyStatus("catalog-missing", "Incomplete (will be removed)", DarkTheme.Danger);
+            PackageRow("catalog-missing").Cells["Selected"].Value = true;
+            VerifyButtonStates(main, true, "Update selected");
+
+            state.SelectedPackages = choices.ToList();
+            tabs.SelectedIndex = 1;
+            PackageRow(optional[0].Id).Cells["Selected"].Value = false;
+            PackageRow(optional[1].Id).Cells["Selected"].Value = true;
+            tabs.SelectedIndex = 0;
+            tabs.SelectedIndex = 1;
+            if (!choices.SetEquals(state.SelectedPackages))
+            {
+                throw new InvalidOperationException("Leaving the shader tab must discard unapplied changes.");
+            }
+            VerifyStatus(optional[0].Id, "Incomplete", Color.Empty);
+            VerifyStatus(optional[1].Id, "Not installed", Color.Empty);
+            VerifyButtonStates(main, true, "Update selected");
+
+            System.Reflection.MethodInfo reset = typeof(MainForm).GetMethod("ResetPackageChoices", flags)!;
+            PackageRow(optional[0].Id).Cells["Selected"].Value = false;
+            PackageRow(optional[1].Id).Cells["Selected"].Value = true;
+            reset.Invoke(main, null);
+            if (!choices.SetEquals(state.SelectedPackages))
+            {
+                throw new InvalidOperationException("Catalog/purge reset must restore the saved selection.");
+            }
+            state.Packages.Clear();
+            reset.Invoke(main, null);
+            if (!choices.SetEquals(state.SelectedPackages))
+            {
+                throw new InvalidOperationException("Purged inventory must retain the last applied reinstall choices.");
+            }
+            VerifyStatus(optional[0].Id, "Not installed (will be added)", DarkTheme.Warning);
+            VerifyButtonStates(main, true, "Apply selection");
+
+            Font originalFont = grid.Font;
+            using var largerFont = new Font(originalFont.FontFamily, originalFont.Size + 3);
+            grid.Font = largerFont;
+            if (statusColumn.Width <= statusWidth)
+            {
+                throw new InvalidOperationException("The fixed status width must adapt to a larger font.");
+            }
+            grid.Font = originalFont;
+            if (statusColumn.Width != statusWidth)
+            {
+                throw new InvalidOperationException("Restoring the font must restore the original status width.");
+            }
+        }
+        finally
+        {
+            tabs.SelectedIndex = originalTab;
+            stateProperty.SetValue(manager, originalState);
+            choices.Clear();
+            choices.UnionWith(originalChoices);
+            search.Clear();
+            filter.Invoke(main, null);
         }
     }
 
@@ -490,17 +629,50 @@ internal static partial class UiPreview
             refresh.Invoke(main, null);
             installed = packages.Rows.Cast<DataGridViewRow>().Single(row => ((ShaderPackage)row.Tag!).Id == optional.Id);
             installed.Cells["Selected"].Value = false;
+            if (!Equals(installed.Cells["Status"].Value, "Installed (will be removed)") ||
+                installed.Cells["Status"].Style.ForeColor != DarkTheme.Danger ||
+                installed.Cells["Status"].Style.SelectionForeColor != DarkTheme.Danger)
+            {
+                throw new InvalidOperationException("Unchecked installed packages must show a red removal warning.");
+            }
+            installed.Cells["Selected"].Value = true;
+            if (!Equals(installed.Cells["Status"].Value, "Installed") ||
+                !installed.Cells["Status"].Style.ForeColor.IsEmpty ||
+                !installed.Cells["Status"].Style.SelectionForeColor.IsEmpty)
+            {
+                throw new InvalidOperationException("Rechecking a package must clear its removal warning.");
+            }
+            installed.Cells["Selected"].Value = false;
             search.Text = "__hidden_selection__";
+            VerifyButtonStates(main, true, "Apply selection");
             search.Clear();
             if (choices.Contains(optional.Id) || !packages.Rows.Cast<DataGridViewRow>()
                 .Any(row => ((ShaderPackage)row.Tag!).Id == "missing-from-catalog"))
             {
                 throw new InvalidOperationException("Filtering lost a pending removal or an installed catalog-missing package.");
             }
+            installed = packages.Rows.Cast<DataGridViewRow>().Single(row => ((ShaderPackage)row.Tag!).Id == optional.Id);
+            if (!Equals(installed.Cells["Status"].Value, "Installed (will be removed)") ||
+                installed.Cells["Status"].Style.ForeColor != DarkTheme.Danger || !File.Exists(file))
+            {
+                throw new InvalidOperationException("Filtering must preserve pending-removal warnings without deleting files.");
+            }
+            TabControl tabs = Descendants(main).OfType<TabControl>().Single();
+            int originalTab = tabs.SelectedIndex;
+            tabs.SelectedIndex = 1;
+            Capture(main, Path.Combine(gallery, "pending-shader-removal.png"));
+            tabs.SelectedIndex = originalTab;
+            installed = packages.Rows.Cast<DataGridViewRow>().Single(row => ((ShaderPackage)row.Tag!).Id == optional.Id);
+            if (!choices.Contains(optional.Id) || !Equals(installed.Cells["Status"].Value, "Installed") ||
+                !installed.Cells["Status"].Style.ForeColor.IsEmpty)
+            {
+                throw new InvalidOperationException("Tab changes must clear pending removals and restore saved checks.");
+            }
             File.Delete(file);
             refresh.Invoke(main, null);
             installed = packages.Rows.Cast<DataGridViewRow>().Single(row => ((ShaderPackage)row.Tag!).Id == optional.Id);
-            if (!Equals(installed.Cells["Status"].Value, "Incomplete"))
+            if (!Equals(installed.Cells["Status"].Value, "Incomplete") ||
+                !installed.Cells["Status"].Style.ForeColor.IsEmpty)
             {
                 throw new InvalidOperationException("Missing managed shader files must show an incomplete installation.");
             }

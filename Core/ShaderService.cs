@@ -136,7 +136,7 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
             if (framework == null)
             {
                 const string message = "BFBFX requires ZenteonFX, which is missing from the catalog. " +
-                    "Open Shader packages > Refresh catalog, then retry Update selected.";
+                    "Open Shader packages > Refresh catalog, then apply the selection again.";
                 if (dependencyUnavailable == null)
                 {
                     throw new InvalidDataException(message);
@@ -208,7 +208,7 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
         if (package.Files.Keys.Any(value => !actual.Contains(value)))
         {
             throw new IOException($"Files are missing from {package.Name}. Restore the original files, " +
-                "or use Shader packages > Purge shader folder, then Update selected.");
+                "or use Shader packages > Purge shader folder, then Apply selection.");
         }
     }
 
@@ -291,7 +291,7 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
             if (occupied.Length > 0)
             {
                 throw new IOException("Unmanaged files occupy the package directory: " + string.Join(", ", occupied) +
-                    ". Use Shader packages > Purge shader folder, then Update selected " +
+                    ". Use Shader packages > Purge shader folder, then Apply selection " +
                     "to reinstall all central shader packages.");
             }
         }

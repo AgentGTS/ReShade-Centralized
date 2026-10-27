@@ -95,6 +95,8 @@ internal static partial class TestSuite
             VulkanRemovalRollsBackAndRecoversRegistryChangesAsync);
         await RunTestAsync("Shader selection installs, updates, removes custom package files and rechecks review",
             ShaderSelectionInstallsUpdatesAndRemovesAsync);
+        await RunTestAsync("Apply selection handles new, unchanged, mixed and empty optional selections",
+            ShaderSelectionHandlesAllCombinationsAsync);
         await RunTestAsync("Failed removals retain required dependencies and unchecked intent across restart",
             ShaderRemovalFailureRetainsDependenciesAndIntentAsync);
         await RunTestAsync("Canceled removals preserve committed operations and saved selection intent",

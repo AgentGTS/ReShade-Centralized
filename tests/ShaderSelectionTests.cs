@@ -9,6 +9,69 @@ internal static partial class TestSuite
         public void Report(string value) => report(value);
     }
 
+    private static async Task ShaderSelectionHandlesAllCombinationsAsync()
+    {
+        string directory = CreateTestDirectory("shader-selection-combinations");
+        byte[] archive = [];
+        var store = new StateStore(Path.Combine(directory, "central"));
+        using var manager = new Manager(store, new InMemoryLayerRegistry(),
+            new Downloads(new StubHttpMessageHandler(_ => PackageResponse(archive))));
+        await manager.InitializeAsync(store.DirectoryPath, None);
+        ShaderPackage standard = TestPackage("standard", required: true);
+        ShaderPackage first = TestPackage("first");
+        ShaderPackage second = TestPackage("second");
+        ShaderPackage unused = TestPackage("unused");
+        ShaderPackage[] catalog = [standard, first, second, unused];
+        ShaderPackage[][] selections =
+        [
+            [], [first], [first], [second], [], [standard, first, second], [standard, second], []
+        ];
+
+        for (var index = 0; index < selections.Length; index++)
+        {
+            string contents = "// shader revision " + index;
+            string zip = Path.Combine(directory, $"package-{index}.zip");
+            CreateArchive(zip, ("repo/Shaders/Test.fx", contents));
+            archive = File.ReadAllBytes(zip);
+            HashSet<string> previousIds = manager.State!.Packages.Select(package => package.Id).ToHashSet();
+            HashSet<string> expectedIds = selections[index].Append(standard)
+                .Select(package => package.Id).ToHashSet();
+            string[] removedIds = previousIds.Except(expectedIds).Order().ToArray();
+            ShaderSelectionPlan plan = manager.CreateShaderSelectionPlan(selections[index], catalog);
+            AssertTrue(plan.Selected.Select(package => package.Id).ToHashSet().SetEquals(expectedIds));
+            AssertTrue(plan.Removals.Select(package => package.Id).Order().SequenceEqual(removedIds));
+            if (removedIds.Length > 0)
+            {
+                string savedState = File.ReadAllText(store.StatePath);
+                AssertThrows<InvalidOperationException>(() =>
+                    manager.ApplyShaderSelectionAsync(plan, catalog, null, None));
+                AssertTrue(File.ReadAllText(store.StatePath) == savedState);
+                AssertTrue(manager.State.Packages.Select(package => package.Id).ToHashSet().SetEquals(previousIds));
+            }
+
+            PackageUpdateReport report = await manager.ApplyShaderSelectionAsync(
+                plan, catalog, null, None, removalsConfirmed: removedIds.Length > 0);
+            AssertTrue(report.InstalledCount == expectedIds.Count && report.RemovedCount == removedIds.Length &&
+                report.FailedCount == 0, report.Summary);
+            AssertTrue(manager.State.Packages.Select(package => package.Id).ToHashSet().SetEquals(expectedIds));
+            AssertTrue(manager.State.SelectedPackages.ToHashSet().SetEquals(expectedIds));
+            foreach (string id in expectedIds)
+            {
+                string shader = Path.Combine(ShaderService.PackageDirectory(manager.State.Paths.Shaders, id), "Test.fx");
+                AssertTrue(File.ReadAllText(shader) == contents, "Selected packages must update to the new revision.");
+            }
+            foreach (string id in removedIds.Append(unused.Id))
+            {
+                AssertTrue(!Directory.Exists(ShaderService.PackageDirectory(manager.State.Paths.Shaders, id)));
+            }
+        }
+
+        using var reopened = new Manager(new StateStore(store.DirectoryPath), new InMemoryLayerRegistry());
+        reopened.Open();
+        AssertTrue(reopened.State!.Packages.Single().Id == standard.Id &&
+            reopened.State.SelectedPackages.SequenceEqual([standard.Id]));
+    }
+
     private static async Task ShaderSelectionInstallsUpdatesAndRemovesAsync()
     {
         string directory = CreateTestDirectory("apply-shader-selection");
