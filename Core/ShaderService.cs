@@ -101,7 +101,7 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
                 {
                     throw new InvalidDataException("Catalog is missing required standard effects.");
                 }
-            }, progress, cancellationToken);
+            }, cancellationToken);
             catalog = Combine(Parse(text));
         }
         catch (Exception error) when (error is HttpRequestException or IOException or InvalidDataException or
@@ -212,6 +212,33 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
             throw new InvalidDataException("A shader package ID must be a single folder name.");
         }
         return FileTransaction.Contained(root, id);
+    }
+
+    public static bool IsPackageComplete(InstalledPackage package, CentralPaths paths)
+    {
+        if (package.Files.Count == 0)
+        {
+            return false;
+        }
+        try
+        {
+            return package.Files.Keys.All(key =>
+            {
+                string[] parts = key.Split('/', 2);
+                if (parts.Length != 2 || parts[0] is not ("shaders" or "textures"))
+                {
+                    return false;
+                }
+                string root = parts[0] == "shaders" ? paths.Shaders : paths.Textures;
+                string file = FileTransaction.Contained(PackageDirectory(root, package.Id), parts[1]);
+                FileTransaction.CheckParents(file);
+                return FileTransaction.Link(file) == null && File.Exists(file);
+            });
+        }
+        catch (Exception error) when (error is IOException or ArgumentException or InvalidDataException)
+        {
+            return false;
+        }
     }
 
     public static void CheckUnmodified(InstalledPackage package, CentralPaths paths)

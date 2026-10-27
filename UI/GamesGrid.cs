@@ -73,7 +73,7 @@ internal sealed class GamesGrid : DataGridView
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        if (RowCount != 0)
+        if (RowCount != 0 || Controls.OfType<StorageLoadingIndicator>().Any(control => control.Visible))
         {
             return;
         }

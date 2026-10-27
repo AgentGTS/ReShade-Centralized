@@ -83,7 +83,7 @@ public sealed class CompatibilityCatalog
                 {
                     throw new InvalidDataException("Compatibility catalog has no executable entries.");
                 }
-            }, progress, cancellationToken);
+            }, cancellationToken);
             Default = new(text);
         }
         catch (Exception error) when (error is HttpRequestException or IOException or InvalidDataException or

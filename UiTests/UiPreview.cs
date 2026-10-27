@@ -9,11 +9,11 @@ internal static partial class UiPreview
         Control.CheckForIllegalCrossThreadCalls = true;
         Exception? failure = null;
         using var host = new Form { Opacity = 0, ShowInTaskbar = false };
-        host.Shown += (_, _) => host.BeginInvoke(() =>
+        host.Shown += (_, _) => host.BeginInvoke(async () =>
         {
             try
             {
-                RunChecks(args);
+                await RunChecksAsync(args);
             }
             catch (Exception error)
             {
@@ -31,15 +31,27 @@ internal static partial class UiPreview
         }
     }
 
-    private static void RunChecks(string[] args)
+    private static async Task RunChecksAsync(string[] args)
     {
-        using var main = new MainForm(AppContext.BaseDirectory, preview: true)
+        using var main = new MainForm(new Manager(StateStore.ForApplication(AppContext.BaseDirectory), new WindowsLayerRegistry()), initializeOnShow: false)
         {
             Opacity = 0,
             ShowInTaskbar = false
         };
         main.Show();
         Application.DoEvents();
+        string? exitChecks = Argument(args, "--exit-checks");
+        if (exitChecks != null)
+        {
+            await VerifyExitSafetyAsync(Path.GetFullPath(exitChecks));
+            return;
+        }
+        string? loadingBenchmark = Argument(args, "--loading-benchmark");
+        if (loadingBenchmark != null)
+        {
+            MeasureLoadingBaseline(main, Path.GetFullPath(loadingBenchmark));
+            return;
+        }
         VerifyPackageSelection(main);
         VerifyShaderSelectionModes(main);
         VerifyFilteredShaderSelections(main);
@@ -60,6 +72,8 @@ internal static partial class UiPreview
 
         gallery = Path.GetFullPath(gallery);
         Directory.CreateDirectory(gallery);
+        await VerifyStorageLoadingAsync(gallery);
+        await VerifyExitSafetyAsync(gallery);
         VerifyCredits(main, gallery);
         VerifyCompatibilityReview(gallery);
         VerifyShaderInventoryAndGridLabels(main, gallery);
@@ -772,7 +786,8 @@ internal static partial class UiPreview
             }
 
             Button help = Descendants(form).OfType<Button>().Single(control => control.AccessibleName == "Help");
-            Button cancel = Descendants(help.Parent!).OfType<Button>().Single(control => control.Text == "Cancel");
+            Button cancel = Descendants(help.Parent!).OfType<Button>()
+                .Single(control => control.Text is "Cancel" or "Retry");
             if (help.Height != cancel.Height || help.Top != cancel.Top)
             {
                 throw new InvalidOperationException("The footer Help and Cancel buttons are misaligned.");

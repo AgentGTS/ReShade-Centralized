@@ -1,6 +1,6 @@
 param([string]$OutputDirectory = '')
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path -Parent $PSScriptRoot
+$repo = $PSScriptRoot
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repo 'artifacts\win-x64' }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 dotnet restore (Join-Path $repo 'ReShade Centralized.csproj') -r win-x64 -p:SelfContained=true --nologo

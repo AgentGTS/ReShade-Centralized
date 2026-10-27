@@ -22,7 +22,7 @@ internal static class CatalogCache
 
     public static async Task<string> DownloadAsync(
         Downloads downloads, string url, string path, Action<string> validate,
-        IProgress<string>? progress, CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));

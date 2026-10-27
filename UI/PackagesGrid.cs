@@ -110,7 +110,8 @@ internal sealed class PackagesGrid : DataGridView
         e.Handled = true;
     }
 
-    public void SetPackages(IEnumerable<ShaderPackage> packages, HashSet<string> selected, ManagerState? state)
+    public void SetPackages(IEnumerable<ShaderPackage> packages, HashSet<string> selected, ManagerState? state,
+        IReadOnlyDictionary<string, bool>? completeness = null)
     {
         refreshing = true;
         try
@@ -119,7 +120,9 @@ internal sealed class PackagesGrid : DataGridView
             foreach (ShaderPackage package in packages)
             {
                 InstalledPackage? installed = state?.Packages.SingleOrDefault(item => item.Id == package.Id);
-                string status = installed == null ? "Not installed" : IsComplete(installed, state!.Paths)
+                bool complete = installed != null && (completeness?.TryGetValue(installed.Id, out bool known) == true ?
+                    known : ShaderService.IsPackageComplete(installed, state!.Paths));
+                string status = installed == null ? "Not installed" : complete
                     ? "Installed" : "Incomplete";
                 int row = Rows.Add(selected.Contains(package.Id), package.ToString(), status);
                 Rows[row].Tag = package;
@@ -171,30 +174,4 @@ internal sealed class PackagesGrid : DataGridView
         }
     }
 
-    private static bool IsComplete(InstalledPackage package, CentralPaths paths)
-    {
-        if (package.Files.Count == 0)
-        {
-            return false;
-        }
-        try
-        {
-            return package.Files.Keys.All(key =>
-            {
-                string[] parts = key.Split('/', 2);
-                if (parts.Length != 2 || parts[0] is not ("shaders" or "textures"))
-                {
-                    return false;
-                }
-                string root = parts[0] == "shaders" ? paths.Shaders : paths.Textures;
-                string file = FileTransaction.Contained(ShaderService.PackageDirectory(root, package.Id), parts[1]);
-                FileTransaction.CheckParents(file);
-                return FileTransaction.Link(file) == null && File.Exists(file);
-            });
-        }
-        catch (Exception error) when (error is IOException or ArgumentException or InvalidDataException)
-        {
-            return false;
-        }
-    }
 }
