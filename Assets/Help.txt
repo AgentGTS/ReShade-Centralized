@@ -3,12 +3,14 @@ GETTING STARTED
 Run ReShade Centralized as administrator. Keep the default storage folder, Documents\ReShade Centralized, or choose a folder outside the app folder. Keep it at the same location and available when playing.
 1. Choose Runtime & storage > Update ReShade.
 2. In Shader packages, select packages and choose Apply selection.
-3. Choose Games > Install game. Select the actual game executable, not its launcher, and choose its graphics API and build. Review the changes, check the replacement confirmation if shown, then choose Install. Use the Vulkan steps below for Vulkan games.
+3. Choose Games > Install game. Select the game executable and choose its graphics API and build. Supported Unreal bootstraps and RTX Remix games resolve to their actual target; review the resolved executable and install folder if shown. Check the replacement confirmation if shown, then choose Install. Use the Vulkan steps below for Vulkan games.
 4. Launch the game. Press Home to open ReShade's overlay unless you have changed its shortcut, then select effects and save a preset.
 
 CHOOSING AN API AND BUILD
 
 Match the API in the game's settings: DirectX 9, DXGI (DirectX 10/11/12), OpenGL, or Vulkan. Use Check graphics API for a recommendation if unsure.
+Recommendations inspect the resolved executable and supported DXVK/RTX Remix layouts first. The downloaded compatibility catalog supplies an API hint only when internal detection is inconclusive. If neither resolves the API, choose it manually. Recommendations never select an API or build for a new game; editing a registered game loads its saved settings. Choose Vulkan for DXVK/RTX Remix; prepare the shared Vulkan layer first. Invalid or unavailable targets require manual selection. Direct3D 8 games still require a separate compatible conversion wrapper.
+The cached compatibility catalog can place hook DLLs in a game subfolder, choose a required DirectX hook filename, or select the runtime architecture for a known launcher. Review shows these destinations. Catalog adjustments are skipped when internal detection contradicts the entry. Existing custom depth/preprocessor settings are kept; missing applicable game-specific depth defaults are filled. Both upstream catalogs are fetched directly on first setup and by Refresh catalog, then cached in central storage for offline use. Without a compatibility cache, internal detection and manual selection remain available; without a shader catalog cache, a minimal package list is used. Games marked as blocking/banning ReShade cannot be installed; existing files are kept.
 Choose Standard unless you need add-ons. For add-ons, choose Standard + add-on support and put the add-on files in the game's Open profile folder: .addon32 for 32-bit games or .addon64 for 64-bit games. Include any files required by the add-on. An existing [ADDON] AddonPath in the profile's ReShade.ini takes precedence: remove it to use the profile folder, or set it to the game folder to load add-ons there instead.
 
 INSTALLING FOR A VULKAN GAME
@@ -39,13 +41,17 @@ EVERYDAY USE
 
 EXISTING SHADERS AND PRESETS
 
-Shaders and textures in reshade-shaders\Shaders and reshade-shaders\Textures beside the selected executable remain available. When registering a game that already has ReShade, its selected preset is copied into the profile if available; the original is kept. A missing preset uses a blank default. If the preset cannot be read, fix its access permissions or select another preset in the existing ReShade setup before retrying. Repairs keep your current profile preset.
+Shaders and textures in reshade-shaders\Shaders and reshade-shaders\Textures beside the resolved executable or compatibility install folder remain available. When registering a game that already has ReShade, its selected preset is copied into the profile if available; the original is kept. A missing preset uses a blank default. If the preset cannot be read, fix its access permissions or select another preset in the existing ReShade setup before retrying. Repairs keep your current profile preset. Existing StartupPresetPath settings retain their original location and startup override behavior when the configuration moves to a central profile.
 Review any replacement warning before installing. Replaced files will be deleted; files that existing links point to are kept. Unregister will not recover deleted files.
 
 UPDATING OR REINSTALLING THE APP
 
 Close affected games before updating ReShade. Keep central storage when replacing or deleting the app folder. After reinstalling, select the same storage folder to reopen your games, shaders and presets.
 If an older beta's storage cannot be opened, follow the message in the app. You may need to unregister games with the old version before setting up fresh storage.
+
+CREDITS AND LICENSES
+
+Open Credits to read the application MIT license, ReShade BSD notice, catalog source/licensing information, and .NET notices. Published builds embed the same complete runtime notices included in THIRD-PARTY-NOTICES.txt. Installed shader packages have their own terms; recognized license, author, copyright, README and notice documents are retained under each package's _notices folder and shown in Credits. Reapply older packages to collect missing documents. Runtime downloading and attribution do not establish redistribution permission for upstream catalogs or shaders.
 
 COMMON PROBLEMS
 

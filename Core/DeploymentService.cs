@@ -16,6 +16,44 @@ public sealed class DeploymentService
         _ => null
     };
 
+    public static string[] ConfigurationPaths(string executable, RenderApi api) =>
+        InstallationDirectories(executable, api).Select(directory => Path.Combine(directory, "ReShade.ini")).ToArray();
+
+    private static string[] InstallationDirectories(string executable, RenderApi? api) =>
+        new[] { Path.GetDirectoryName(executable)!, CompatibilityCatalog.Default.InstallationDirectory(executable, api) }
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    private static IEnumerable<string> InspectionPaths(string executable, RenderApi? api) =>
+        InstallationDirectories(executable, api).SelectMany(directory =>
+            ProxyNames.Append("ReShade.ini").Select(name => Path.Combine(directory, name)));
+
+    private static string? ExistingConfiguration(string executable, RenderApi api)
+    {
+        string directory = CompatibilityCatalog.Default.InstallationDirectory(executable, api);
+        string rootConfig = Path.Combine(Path.GetDirectoryName(executable)!, "ReShade.ini");
+        if (HasFileTarget(rootConfig))
+        {
+            string? basePath = IniDocument.Split(IniDocument.Read(rootConfig).Get("INSTALL", "BasePath")).FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(basePath))
+            {
+                string candidate = Path.GetFullPath(basePath, directory);
+                if (Directory.Exists(candidate))
+                {
+                    directory = candidate;
+                }
+            }
+        }
+        string config = Path.Combine(directory, "ReShade.ini");
+        return HasFileTarget(config) ? config : HasFileTarget(rootConfig) ? rootConfig : null;
+    }
+
+    private static IniDocument ReadAdoptedConfiguration(string source)
+    {
+        IniDocument document = IniDocument.Read(source);
+        document.SetDefault("INSTALL", "BasePath", IniDocument.Join([Path.GetDirectoryName(source)!]));
+        return document;
+    }
+
     public static bool IsOwnedLink(OwnedLink link)
     {
         string? target = FileTransaction.Link(link.Path);
@@ -108,15 +146,22 @@ public sealed class DeploymentService
             return null;
         }
 
-        string directory = Path.GetDirectoryName(gamePath)!;
-        string? proxy = api.HasValue ? Proxy(api.Value) : null;
+        gamePath = GameTargetResolver.Resolve(gamePath).Executable;
+        if (CompatibilityCatalog.Default.Find(gamePath)?.Banned == true)
+        {
+            return new("The official compatibility catalog marks this executable as blocking or banning ReShade. " +
+                "Installation is unavailable; existing files are kept.", true);
+        }
+        string directory = CompatibilityCatalog.Default.InstallationDirectory(gamePath, api);
+        string? proxy = api.HasValue ? CompatibilityCatalog.Default.Proxy(gamePath, api.Value) : null;
         var unmanaged = new List<string>();
         var changed = new List<string>();
         var otherApis = new List<string>();
         var unrelated = new List<string>();
-        foreach (string name in ProxyNames.Append("ReShade.ini"))
+        foreach (string path in InspectionPaths(gamePath, api))
         {
-            string path = Path.Combine(directory, name);
+            string name = Path.GetFileName(path);
+            string label = includePaths ? path : Path.GetRelativePath(Path.GetDirectoryName(gamePath)!, path);
             if (!FileTransaction.Exists(path))
             {
                 continue;
@@ -127,7 +172,7 @@ public sealed class DeploymentService
             {
                 if (!IsOwnedLink(owned) && !CanReplaceReShadeLink(path))
                 {
-                    changed.Add(includePaths ? path : name);
+                    changed.Add(label);
                     continue;
                 }
 
@@ -139,19 +184,19 @@ public sealed class DeploymentService
 
             if (name == "ReShade.ini")
             {
-                unmanaged.Add(includePaths ? path : name);
+                unmanaged.Add(label);
             }
             else if (IsReShadeHook(path))
             {
-                unmanaged.Add(includePaths ? path : name);
-                if (api.HasValue && name != proxy)
+                unmanaged.Add(label);
+                if (api.HasValue && (name != proxy || !FileTransaction.Same(Path.GetDirectoryName(path)!, directory)))
                 {
-                    otherApis.Add(includePaths ? path : name);
+                    otherApis.Add(label);
                 }
             }
-            else if (name == proxy)
+            else if (name == proxy && FileTransaction.Same(Path.GetDirectoryName(path)!, directory))
             {
-                unrelated.Add(includePaths ? path : name);
+                unrelated.Add(label);
             }
         }
 
@@ -201,27 +246,38 @@ public sealed class DeploymentService
                 "Open Games > Install game or Repair / edit and select its Executable.");
         }
 
-        string executable = PortableExecutable.GetValidatedGamePath(game.Executable) ??
+        string selected = PortableExecutable.GetValidatedGamePath(game.Executable) ??
             throw new IOException("Choose a valid local x86/x64 game executable outside Windows folders.");
-        string directory = Path.GetDirectoryName(executable)!;
+        GameTarget target = GameTargetResolver.Resolve(selected);
+        string executable = target.Executable;
+        string directory = CompatibilityCatalog.Default.InstallationDirectory(executable, game.Api);
+        FileTransaction.CheckParents(Path.Combine(directory, "ReShade.ini"));
+        if (!Directory.Exists(directory))
+        {
+            throw new IOException("The compatibility install folder is missing: " + directory +
+                ". Select the actual game executable or restore this game folder before installing.");
+        }
         string profile = game.Directory.Length == 0 ?
-            ProfilePaths.DirectoryFor(state, game) : game.Directory;
-        string config = Path.Combine(directory, "ReShade.ini");
+            ProfilePaths.DirectoryFor(state, game, executable) : game.Directory;
         string centralConfig = Path.Combine(profile, "ReShade.ini");
         ExistingInstallationNotice? notice =
             InspectExistingInstallation(executable, game.Api, game.Links);
         string? conflict = notice?.BlocksInstallation == true ? notice.Message : null;
         var links = new List<InstallationLink>();
         var observations = new List<string> { executable, game.Api.ToString(), game.Build.ToString(), profile };
-        string? proxy = Proxy(game.Api);
-        string stem = PortableExecutable.Architecture(executable) == CpuArchitecture.X64 ?
+        string? proxy = CompatibilityCatalog.Default.Proxy(executable, game.Api);
+        CpuArchitecture architecture = CompatibilityCatalog.Default.Architecture(executable, game.Api);
+        string stem = architecture == CpuArchitecture.X64 ?
             "ReShade64.dll" : "ReShade32.dll";
         if (proxy != null)
         {
             AddLink(Path.Combine(directory, proxy), Path.Combine(state.Paths.Binaries(game.Build), stem));
         }
 
-        AddLink(config, centralConfig);
+        foreach (string config in ConfigurationPaths(executable, game.Api))
+        {
+            AddLink(config, centralConfig);
+        }
         string[] removedLinks = game.Links.Where(old => !links.Any(link => FileTransaction.Same(link.Path, old.Path)))
             .Select(link => link.Path).ToArray();
         foreach (OwnedLink old in game.Links)
@@ -234,16 +290,19 @@ public sealed class DeploymentService
             }
         }
 
-        foreach (string name in ProxyNames.Append("ReShade.ini"))
+        foreach (string path in InspectionPaths(executable, game.Api))
         {
-            Observe(Path.Combine(directory, name));
+            Observe(path);
         }
 
         string? preset = null;
         bool adopting = !File.Exists(centralConfig);
-        if (adopting && HasFileTarget(config))
+        string? source = adopting ? ExistingConfiguration(executable, game.Api) : null;
+        if (source != null)
         {
-            preset = ConfigurationService.SelectedPreset(IniDocument.Read(config), directory);
+            observations.Add("Configuration source: " + source);
+            Observe(source);
+            preset = ConfigurationService.SelectedPreset(ReadAdoptedConfiguration(source), Path.GetDirectoryName(source)!);
             if (preset != null)
             {
                 // Opening the file here makes unreadable selections fail before replacing any game files.
@@ -257,7 +316,13 @@ public sealed class DeploymentService
         observations.Add(preset ?? "");
         byte[] fingerprintBytes = SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", observations)));
         string fingerprint = Convert.ToHexString(fingerprintBytes);
-        return new(directory, profile, links, removedLinks, localPaths, preset, fingerprint, conflict);
+        return new(directory, profile, links, removedLinks, localPaths, preset, fingerprint, conflict)
+        {
+            Executable = executable,
+            TargetReason = target.Reason,
+            ConfigurationSource = source,
+            RuntimeArchitecture = architecture != PortableExecutable.Architecture(executable) ? architecture : null
+        };
 
         void AddLink(string path, string target)
         {
@@ -346,8 +411,9 @@ public sealed class DeploymentService
                 "or Repair / edit, use Executable to select the game's .exe file.");
         }
 
-        game.Architecture = PortableExecutable.Architecture(game.Executable);
-        string gameDirectory = Path.GetDirectoryName(game.Executable)!;
+        game.Executable = GameTargetResolver.Resolve(game.Executable).Executable;
+        game.Architecture = CompatibilityCatalog.Default.Architecture(game.Executable, game.Api);
+        string gameDirectory = CompatibilityCatalog.Default.InstallationDirectory(game.Executable, game.Api);
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         if (windows.Length > 0 &&
             (FileTransaction.Same(gameDirectory, windows) ||
@@ -365,11 +431,12 @@ public sealed class DeploymentService
                 "Open Runtime & storage > Update ReShade, then retry Games > Install game or Repair / edit.");
         }
 
-        string? proxy = Proxy(game.Api);
-        foreach (string name in ProxyNames)
+        string? proxy = CompatibilityCatalog.Default.Proxy(game.Executable, game.Api);
+        foreach (string candidate in InspectionPaths(game.Executable, game.Api)
+            .Where(path => ProxyNames.Contains(Path.GetFileName(path))))
         {
-            string candidate = Path.Combine(gameDirectory, name);
-            if (name != proxy && IsReShadeHook(candidate) &&
+            if ((Path.GetFileName(candidate) != proxy ||
+                !FileTransaction.Same(Path.GetDirectoryName(candidate)!, gameDirectory)) && IsReShadeHook(candidate) &&
                 !game.Links.Any(link => FileTransaction.Same(link.Path, candidate) && IsOwnedLink(link)))
             {
                 throw new IOException("An existing ReShade installation for another API must be removed first: " +
@@ -377,14 +444,11 @@ public sealed class DeploymentService
             }
         }
 
-        string localConfig = Path.Combine(gameDirectory, "ReShade.ini");
         string centralConfig = ConfigurationService.ConfigPath(game);
         InstallationPlan plan = CreatePlan(state, game);
         ValidatePlan(plan, reviewedPlan, replaceExisting);
-        string? initial = !File.Exists(centralConfig) &&
-            HasFileTarget(localConfig) ?
-            File.ReadAllText(localConfig) :
-            null;
+        string? initial = plan.ConfigurationSource != null ?
+            ReadAdoptedConfiguration(plan.ConfigurationSource).ToString() : null;
         if (initial != null && plan.PresetSource != null)
         {
             transaction.Copy(plan.PresetSource, Path.Combine(game.Directory, "ReShadePreset.ini"));
@@ -393,8 +457,7 @@ public sealed class DeploymentService
         ConfigurationService.Update(state, game, transaction, initial);
         foreach (OwnedLink old in game.Links.ToArray())
         {
-            if (FileTransaction.Same(old.Path, localConfig) ||
-                (proxy != null && FileTransaction.Same(old.Path, Path.Combine(gameDirectory, proxy))))
+            if (plan.Links.Any(link => FileTransaction.Same(link.Path, old.Path)))
             {
                 continue;
             }
@@ -413,7 +476,10 @@ public sealed class DeploymentService
             Link(game, Path.Combine(gameDirectory, proxy), dll, transaction);
         }
 
-        Link(game, localConfig, centralConfig, transaction, true);
+        foreach (string config in ConfigurationPaths(game.Executable, game.Api))
+        {
+            Link(game, config, centralConfig, transaction, true);
+        }
     }
 
     public static UnregisterResult Remove(GameProfile game, FileTransaction transaction)

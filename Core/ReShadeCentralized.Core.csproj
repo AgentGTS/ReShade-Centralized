@@ -5,6 +5,6 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <EmbeddedResource Include="..\Assets\*.ini" />
+    <EmbeddedResource Include="..\Assets\ExtraPackages.ini" />
   </ItemGroup>
 </Project>

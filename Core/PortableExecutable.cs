@@ -3,7 +3,7 @@ using System.Reflection.PortableExecutable;
 
 namespace ReShadeCentralized;
 
-public static class PortableExecutable
+public static partial class PortableExecutable
 {
     public static string? GetValidatedGamePath(string path)
     {

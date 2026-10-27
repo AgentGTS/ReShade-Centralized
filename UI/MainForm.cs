@@ -3,7 +3,7 @@ using System.Reflection;
 
 namespace ReShadeCentralized;
 
-public sealed class MainForm : Form
+public sealed partial class MainForm : Form
 {
     private static readonly ReleaseVersion AppVersion = ReleaseVersion.Parse(
         typeof(MainForm).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
@@ -200,6 +200,7 @@ public sealed class MainForm : Form
         activityLog.ScrollBars = ScrollBars.Both;
         activity.Controls.Add(activityLog, 0, 0);
         activity.SetRowSpan(activityLog, 3);
+        BuildCredits();
         if (!preview)
         {
             Shown += async (_, _) => await InitializeAsync();
@@ -219,7 +220,7 @@ public sealed class MainForm : Form
         RefreshView();
         if (preview)
         {
-            LoadBundledCatalog();
+            LoadCatalog();
         }
     }
 
@@ -294,16 +295,22 @@ public sealed class MainForm : Form
                 cancellationToken => manager.InitializeAsync(setup.CentralRoot, cancellationToken));
         }
 
-        LoadBundledCatalog();
+        LoadCatalog();
+        if (!manager.Shaders.HasCachedCatalog ||
+            !File.Exists(Path.Combine(manager.Store.DirectoryPath, CompatibilityCatalog.CacheName)))
+        {
+            await RunOperationAsync("Loading catalogs", async cancellationToken =>
+            {
+                catalog = await manager.Shaders.CatalogAsync(progress, cancellationToken);
+                ResetPackageChoices();
+            });
+        }
         RefreshView();
     }
 
-    private void LoadBundledCatalog()
+    private void LoadCatalog()
     {
-        catalog = ShaderService.Parse(ShaderService.Resource("EffectPackages.ini"))
-            .Concat(ShaderService.Parse(ShaderService.Resource("ExtraPackages.ini"), true))
-            .DistinctBy(package => ShaderService.CanonicalRepository(package.Repository))
-            .ToList();
+        catalog = manager.Shaders.CachedCatalog();
         SynchronizePackageChoices();
         FilterPackages();
     }

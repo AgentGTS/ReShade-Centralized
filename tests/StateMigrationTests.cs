@@ -31,6 +31,7 @@ internal static partial class TestSuite
         original["SelectedPackages"] = null;
         original["Games"]![0]!["Name"] = null;
         original["Games"]![0]!["Architecture"] = "X86";
+        original["Games"]![0]!["Api"] = (int)game.Api;
         original["Games"]![0]!["Links"] = null;
         File.WriteAllText(store.StatePath, original.ToJsonString());
         var notices = new List<string>();

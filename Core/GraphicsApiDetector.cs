@@ -6,15 +6,28 @@ namespace ReShadeCentralized;
 
 public static class GraphicsApiDetector
 {
-    public static RenderApi? Detect(string path, CancellationToken cancellationToken = default)
+    public static RenderApi? Detect(string path, CancellationToken cancellationToken = default) =>
+        Detect(path, cancellationToken, useCompatibility: true);
+
+    internal static RenderApi? DetectInternal(string path) =>
+        Detect(path, CancellationToken.None, useCompatibility: false);
+
+    private static RenderApi? Detect(string path, CancellationToken cancellationToken, bool useCompatibility)
     {
+        string? executable = null;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            string? executable = PortableExecutable.GetValidatedGamePath(path);
+            executable = PortableExecutable.GetValidatedGamePath(path);
             if (executable == null)
             {
                 return null;
+            }
+            GameTarget target = GameTargetResolver.Resolve(executable, cancellationToken);
+            executable = target.Executable;
+            if (target.IsRemix || GameTargetResolver.HasDxvk(executable))
+            {
+                return RenderApi.Vulkan;
             }
             using var stream = new FileStream(executable, FileMode.Open, FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete);
@@ -29,15 +42,19 @@ public static class GraphicsApiDetector
 
             var candidates = new HashSet<RenderApi>();
             ReadImports(stream, headers, headers.PEHeader.ImportTableDirectory, false, candidates, cancellationToken);
-            ReadImports(stream, headers, headers.PEHeader.DelayImportTableDirectory, true, candidates, cancellationToken);
-            return candidates.Count == 1 ? candidates.Single() : null;
+            ReadImports(stream, headers, headers.PEHeader.DelayImportTableDirectory,
+                true, candidates, cancellationToken);
+            return candidates.Count == 1 ? candidates.Single() : CatalogFallback();
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException
             or BadImageFormatException
             or ArgumentException or OverflowException or NotSupportedException or System.Security.SecurityException)
         {
-            return null;
+            return CatalogFallback();
         }
+
+        RenderApi? CatalogFallback() =>
+            useCompatibility && executable != null ? CompatibilityCatalog.Default.Find(executable)?.Api : null;
     }
 
     private static void ReadImports(

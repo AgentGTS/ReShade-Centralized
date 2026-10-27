@@ -47,8 +47,9 @@ Release files are written to `artifacts`.
 ## Credits and license
 
 - [OopyDoopy](https://github.com/OopyDoopy/ReShade-Centralized): original ReShade Centralized.
-- [crosire and contributors](https://github.com/crosire/reshade): ReShade and the [official shader catalog](https://github.com/crosire/reshade-shaders/blob/list/EffectPackages.ini).
+- [crosire and contributors](https://github.com/crosire/reshade): ReShade and its native behavior references; see the full [BSD-3-Clause notice](https://github.com/crosire/reshade/blob/v6.8.0/LICENSE.md).
+- The [upstream shader catalog](https://github.com/crosire/reshade-shaders/blob/list/EffectPackages.ini) and [compatibility catalog](https://github.com/crosire/reshade-shaders/blob/list/Compatibility.ini) are downloaded directly and cached in the user's central storage. Upstream catalog snapshots are excluded from this repository and release; catalog licensing limits shown in Credits remain separate from this application's license.
 - Shader package authors.
 - [.NET contributors](https://github.com/dotnet): WinForms and the bundled runtime.
 
-[MIT license](LICENSE.md). Third-party licenses apply; see `THIRD-PARTY-NOTICES.txt` in the release.
+[MIT license](LICENSE.md) for this project and its retained original-project components. Third-party material retains its own terms. Open **Credits** in the app to read the application license, ReShade notice, catalog provenance, full .NET release notices, and retained notices from installed shader packages. Releases also include `THIRD-PARTY-NOTICES.txt`, with the same complete runtime-pack notices embedded in the app. Root/nested package license and attribution documents are retained during installation; reapply older packages to collect documents missing from earlier installations.

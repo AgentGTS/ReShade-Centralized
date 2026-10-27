@@ -71,7 +71,8 @@ internal static partial class TestSuite
         AssertTrue(notice != null && !notice.BlocksInstallation && notice.Message.Contains("dxgi.dll"));
 
         notice = DeploymentService.InspectExistingInstallation(executable, RenderApi.OpenGL, []);
-        AssertTrue(notice!.BlocksInstallation && notice.Message.Contains("matching Graphics API"));
+        AssertTrue(notice!.BlocksInstallation && notice.Message.Contains("another hook") &&
+            notice.Message.Contains("dxgi.dll"));
         var game = new GameProfile
         {
             Name = "Existing ReShade",

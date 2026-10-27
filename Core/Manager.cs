@@ -32,6 +32,8 @@ public sealed partial class Manager : IDisposable
             return;
         }
 
+        CompatibilityCatalog.LoadCache(Path.Combine(Store.DirectoryPath, CompatibilityCatalog.CacheName));
+
         FileTransaction.RecoverPending(Store.Recovery, registry, reportWarning: ReportWarning);
         State = LoadStorage();
         if (State == null && Store.PointerPath != null)
@@ -114,6 +116,7 @@ public sealed partial class Manager : IDisposable
             try
             {
                 Store.SelectDirectory(root);
+                CompatibilityCatalog.LoadCache(Path.Combine(Store.DirectoryPath, CompatibilityCatalog.CacheName));
                 FileTransaction.RecoverPending(Store.Recovery, registry, reportWarning: ReportWarning);
                 ManagerState? existing = LoadStorage(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -282,11 +285,12 @@ public sealed partial class Manager : IDisposable
                     "the game's actual local executable.");
             }
 
-            game.Executable = Path.GetFullPath(game.Executable);
+            game.Executable = GameTargetResolver.Resolve(game.Executable, cancellationToken).Executable;
             game.Name = Path.GetFileName(game.Executable);
+            string[] configurationPaths = DeploymentService.ConfigurationPaths(game.Executable, game.Api);
             if (updatedState.Games.Any(gameItem => gameItem.Id != game.Id &&
-                FileTransaction.Same(Path.GetDirectoryName(gameItem.Executable)!,
-                    Path.GetDirectoryName(game.Executable)!)))
+                DeploymentService.ConfigurationPaths(gameItem.Executable, gameItem.Api)
+                    .Any(path => configurationPaths.Any(candidate => FileTransaction.Same(path, candidate)))))
             {
                 throw new IOException("Another managed profile already uses this executable directory. " +
                     "Select that profile and choose Repair / edit instead.");

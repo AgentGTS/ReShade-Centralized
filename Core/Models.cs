@@ -94,12 +94,32 @@ public sealed record InstallationPlan(
     string Fingerprint,
     string? Conflict)
 {
+    public string? Executable { get; init; }
+    public string? TargetReason { get; init; }
+    public string? ConfigurationSource { get; init; }
+    public CpuArchitecture? RuntimeArchitecture { get; init; }
+
     public bool RequiresConfirmation => Links.Any(link => link.ReplacesFile);
 
     public string Describe(bool includePaths = true)
     {
-        string FileLabel(string path) => includePaths ? path : Path.GetFileName(path);
+        string FileLabel(string path) => includePaths ? path :
+            Executable != null && path.StartsWith(Path.GetDirectoryName(Executable)! + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase) ? Path.GetRelativePath(Path.GetDirectoryName(Executable)!, path) :
+            Path.GetFileName(path);
         var lines = new List<string>();
+        if (TargetReason != null)
+        {
+            lines.Add($"{TargetReason}: {Executable}");
+        }
+        if (Executable != null && !FileTransaction.Same(GameDirectory, Path.GetDirectoryName(Executable)!))
+        {
+            lines.Add("Install folder: " + GameDirectory);
+        }
+        if (RuntimeArchitecture != null)
+        {
+            lines.Add("Runtime architecture: " + (RuntimeArchitecture == CpuArchitecture.X64 ? "64-bit" : "32-bit"));
+        }
         foreach (InstallationLink link in Links)
         {
             string operation = "Link";

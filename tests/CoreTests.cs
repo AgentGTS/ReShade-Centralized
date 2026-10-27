@@ -254,12 +254,25 @@ internal static partial class TestSuite
     {
         string directory = CreateTestDirectory("catalog");
         using var downloads = new Downloads(new StubHttpMessageHandler(_ => new(HttpStatusCode.ServiceUnavailable)));
-        List<ShaderPackage> catalog = await new ShaderService(
-            downloads,
-            new StateStore(directory)).CatalogAsync(
-            null,
-            None);
-        AssertTrue(catalog.Count >= 45 && catalog.Count(package => package.Required) > 0);
+        var service = new ShaderService(downloads, new StateStore(directory));
+        List<ShaderPackage> catalog = await service.CatalogAsync(null, None);
+        AssertTrue(catalog.Count >= 5 && catalog.Count(package => package.Required) == 1);
+        AssertTrue(catalog.Single(package => package.Required).Id ==
+            ShaderService.PackageId("https://github.com/crosire/reshade-shaders/tree/slim"));
+        AssertTrue(CompatibilityCatalog.Default.Count == 0);
+        File.WriteAllText(Path.Combine(directory, ShaderService.CacheName), """
+            [standard]
+            RepositoryUrl=https://github.com/test/standard
+            DownloadUrl=https://example.test/standard.zip
+            Required=1
+            [dependent]
+            RepositoryUrl=https://github.com/yplebedev/BFBFX
+            DownloadUrl=https://example.test/bfb.zip
+            [framework]
+            RepositoryUrl=https://github.com/zenteon/ZenteonFX
+            DownloadUrl=https://example.test/framework.zip
+            """);
+        catalog = await service.CatalogAsync(null, None);
         AssertTrue(catalog.Select(package => ShaderService.CanonicalRepository(package.Repository)).Distinct()
             .Count() == catalog.Count);
         ShaderPackage bfb = catalog.Single(package => package.Repository.EndsWith("/BFBFX"));

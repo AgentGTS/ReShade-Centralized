@@ -3,13 +3,15 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repo 'artifacts\win-x64' }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
-dotnet publish (Join-Path $repo 'ReShade Centralized.csproj') -c Release -r win-x64 --self-contained true `
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
-    -p:DebugType=None -p:DebugSymbols=false -o $OutputDirectory --nologo
-if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
-Copy-Item -LiteralPath (Join-Path $repo 'README.md'), (Join-Path $repo 'LICENSE.md') -Destination $OutputDirectory
+dotnet restore (Join-Path $repo 'ReShade Centralized.csproj') -r win-x64 -p:SelfContained=true --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
 $assets = Get-Content -LiteralPath (Join-Path $repo 'obj\project.assets.json') -Raw | ConvertFrom-Json
 $noticeParts = New-Object 'System.Collections.Generic.List[string]'
+$noticeParts.Add("ReShade Centralized - third-party notices`n" +
+    "Application code: MIT; see LICENSE.md. Third-party material retains its own terms.`n")
+foreach ($name in @('ReShade-BSD-3-Clause.txt', 'Catalogs-and-Shaders.txt')) {
+    $noticeParts.Add([IO.File]::ReadAllText((Join-Path $repo "Notices\$name")))
+}
 $dependencies = $assets.project.frameworks.PSObject.Properties.Value.downloadDependencies |
     Where-Object { $_.name -in @('Microsoft.NETCore.App.Runtime.win-x64', 'Microsoft.WindowsDesktop.App.Runtime.win-x64') } |
     Sort-Object name -Unique
@@ -31,9 +33,16 @@ foreach ($dependency in $dependencies) {
     }
     if (-not $foundLicense) { throw "Runtime license missing for $($dependency.name)." }
 }
-if ($noticeParts.Count -eq 0) { throw 'No self-contained runtime license notices were found.' }
+if (-not $dependencies) { throw 'No self-contained runtime license dependencies were found.' }
+$embeddedNotices = Join-Path $repo 'obj\ReleaseThirdPartyNotices.txt'
+[IO.File]::WriteAllText($embeddedNotices, [string]::Join("`n`n", $noticeParts))
+dotnet publish (Join-Path $repo 'ReShade Centralized.csproj') -c Release -r win-x64 --self-contained true --no-restore `
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
+    -p:DebugType=None -p:DebugSymbols=false "-p:GeneratedThirdPartyNotices=$embeddedNotices" -o $OutputDirectory --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+Copy-Item -LiteralPath (Join-Path $repo 'README.md'), (Join-Path $repo 'LICENSE.md') -Destination $OutputDirectory
 $thirdParty = Join-Path $OutputDirectory 'THIRD-PARTY-NOTICES.txt'
-[IO.File]::WriteAllText($thirdParty, [string]::Join("`n`n", $noticeParts))
+Copy-Item -LiteralPath $embeddedNotices -Destination $thirdParty
 $binary = Join-Path $OutputDirectory 'ReShade Centralized.exe'
 $appVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($binary).ProductVersion.Split('+')[0]
 $hash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()

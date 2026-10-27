@@ -13,7 +13,7 @@
     <RootNamespace>ReShade_Centralized</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>00045-3601538189.ico</ApplicationIcon>
-    <Version>1.0.0-beta.5</Version>
+    <Version>1.0.0-beta.6</Version>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
@@ -22,6 +22,10 @@
     <Compile Include="Program.cs" />
     <Compile Include="UI\**\*.cs" />
     <EmbeddedResource Include="Assets\Help.txt" LogicalName="ReShadeCentralized.Help.txt" />
+    <EmbeddedResource Include="LICENSE.md" LogicalName="ReShadeCentralized.ApplicationLicense.txt" />
+    <EmbeddedResource Include="Notices\*.txt" />
+    <EmbeddedResource Include="$(GeneratedThirdPartyNotices)" LogicalName="ReShadeCentralized.ReleaseNotices.txt"
+                      Condition="'$(GeneratedThirdPartyNotices)' != ''" />
     <ProjectReference Include="Core\ReShadeCentralized.Core.csproj" />
   </ItemGroup>
 </Project>

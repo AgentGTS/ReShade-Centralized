@@ -26,6 +26,10 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
 {
     public const string CatalogUrl =
         "https://raw.githubusercontent.com/crosire/reshade-shaders/list/EffectPackages.ini";
+    public const string CacheName = "CatalogCache.ini";
+
+    public bool HasCachedCatalog => store.IsSelected &&
+        File.Exists(Path.Combine(store.DirectoryPath, CacheName));
 
     public static string Resource(string name)
     {
@@ -86,38 +90,70 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
-        string cache = Path.Combine(store.DirectoryPath, "CatalogCache.ini");
-        List<ShaderPackage> official;
+        string cache = Path.Combine(store.DirectoryPath, CacheName);
+        List<ShaderPackage> catalog;
         try
         {
-            string text = await downloads.TextAsync(CatalogUrl, cancellationToken);
-            official = Parse(text);
-            if (!official.Any(package => package.Required))
+            progress?.Report("Downloading shader package information from upstream...");
+            string text = await CatalogCache.DownloadAsync(downloads, CatalogUrl, cache, text =>
             {
-                throw new InvalidDataException("Catalog is missing required standard effects.");
-            }
-
-            File.WriteAllText(cache + ".tmp", text);
-            File.Move(cache + ".tmp", cache, true);
+                if (!Parse(text).Any(package => package.Required))
+                {
+                    throw new InvalidDataException("Catalog is missing required standard effects.");
+                }
+            }, progress, cancellationToken);
+            catalog = Combine(Parse(text));
         }
-        catch (Exception e) when (e is HttpRequestException or IOException or InvalidDataException ||
-        (e is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+        catch (Exception error) when (error is HttpRequestException or IOException or InvalidDataException or
+            UnauthorizedAccessException ||
+            (error is TaskCanceledException && !cancellationToken.IsCancellationRequested))
         {
-            progress?.Report("Online catalog unavailable; using the cached/bundled catalog. " + e.Message);
+            progress?.Report("Shader catalog download unavailable; using the cache or minimal offline list. " +
+                error.Message);
+            catalog = CachedCatalog(progress);
+        }
+
+        await CompatibilityCatalog.RefreshAsync(downloads,
+            Path.Combine(store.DirectoryPath, CompatibilityCatalog.CacheName), progress, cancellationToken);
+        return catalog;
+    }
+
+    public List<ShaderPackage> CachedCatalog(IProgress<string>? progress = null)
+    {
+        string? cached = store.IsSelected ?
+            CatalogCache.Read(Path.Combine(store.DirectoryPath, CacheName), progress) : null;
+        if (cached != null)
+        {
             try
             {
-                official = Parse(File.Exists(cache) ? File.ReadAllText(cache) : Resource("EffectPackages.ini"));
+                List<ShaderPackage> packages = Parse(cached);
+                if (packages.Any(package => package.Required))
+                {
+                    return Combine(packages);
+                }
             }
-            catch (Exception error) when (error is IOException or InvalidDataException)
+            catch (Exception error) when (error is InvalidDataException)
             {
-                official = Parse(Resource("EffectPackages.ini"));
+                progress?.Report("Ignoring an invalid shader catalog cache: " + error.Message);
             }
         }
 
-        return official.Concat(Parse(Resource("ExtraPackages.ini"), true))
-            .DistinctBy(package => CanonicalRepository(package.Repository))
-            .ToList();
+        const string standard = "https://github.com/crosire/reshade-shaders";
+        return Combine([new ShaderPackage
+        {
+            Id = PackageId(standard + "/tree/slim"),
+            Name = "Standard effects",
+            Description = "Core shader utilities. Refresh catalog for the full upstream package list.",
+            Repository = standard + "/tree/slim",
+            DownloadUrl = standard + "/archive/slim.zip",
+            Required = true,
+            Enabled = true
+        }]);
     }
+
+    private static List<ShaderPackage> Combine(IEnumerable<ShaderPackage> official) =>
+        official.Concat(Parse(Resource("ExtraPackages.ini"), true))
+            .DistinctBy(package => CanonicalRepository(package.Repository)).ToList();
 
     public static IReadOnlyList<ShaderPackage> WithDependencies(
         IEnumerable<ShaderPackage> selected,
@@ -340,6 +376,16 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
             }
         }
 
+        foreach (string notice in EnumerateFiles(extracted)
+            .Where(file => IsNotice(Path.GetRelativePath(extracted, file))))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string relative = "_notices/" + Path.GetRelativePath(extracted, notice).Replace('\\', '/');
+            string destination = FileTransaction.Contained(shaderTarget, relative);
+            transaction.Copy(notice, destination);
+            installed.Files["shaders/" + relative] = FileTransaction.Hash(destination);
+        }
+
         if (previous != null)
         {
             foreach (string? file in previous.Files.Keys.Except(installed.Files.Keys, StringComparer.OrdinalIgnoreCase))
@@ -354,6 +400,22 @@ public sealed class ShaderService(Downloads downloads, StateStore store)
         state.Packages.RemoveAll(packageItem => packageItem.Id == package.Id);
         state.Packages.Add(installed);
         return installed;
+    }
+
+    private static bool IsNotice(string path)
+    {
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+        if (extension is not ("" or ".txt" or ".md" or ".rst" or ".html" or ".spdx"))
+        {
+            return false;
+        }
+        string name = Path.GetFileNameWithoutExtension(path).ToUpperInvariant();
+        return new[]
+            { "LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE", "AUTHORS", "CREDITS", "UNLICENSE", "README" }
+            .Any(prefix => name == prefix || name.StartsWith(prefix + "-") || name.StartsWith(prefix + "_")) ||
+            path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Any(part => part.Equals("licenses", StringComparison.OrdinalIgnoreCase) ||
+                    part.Equals("licences", StringComparison.OrdinalIgnoreCase));
     }
 
     public async Task<string> StageAsync(

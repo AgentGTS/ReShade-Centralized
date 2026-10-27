@@ -1,0 +1,35 @@
+Upstream catalogs and shader packages
+
+Compatibility information:
+https://github.com/crosire/reshade-shaders/blob/list/Compatibility.ini
+
+Shader package information:
+https://github.com/crosire/reshade-shaders/blob/list/EffectPackages.ini
+
+These catalog files are not embedded or included in the source/release package.
+The app downloads them directly from upstream and keeps local caches in the
+user's central storage. Refresh catalog updates both caches. Without cached
+compatibility information, internal detection and manual API selection remain
+available. A small independently maintained shader fallback lists Standard
+effects and the MIT project's retained extra repository links.
+
+An explicit redistribution license for the upstream list branch has not been
+established. Attribution and runtime downloading do not create a license grant.
+Do not treat these local caches as MIT/BSD-licensed parts of this application,
+or include them in redistributed copies without establishing permission.
+
+Shader authors retain their respective rights. Repository links identify the
+sources; each package and its individual files may have different terms. This
+app downloads selected packages from those sources and preserves recognized
+license, copyright, author and notice documents under the package's _notices
+directory. Installation does not relicense a package or guarantee that every
+upstream permission requirement has been established.
+
+Notices from packages installed before notice preservation was introduced may
+be absent. Reapply the package to collect documents from its current archive.
+Embedded per-file notices are preserved with the shader files. Consult the
+upstream repository if an archive does not contain a separate notice document.
+
+ReShade runtime DLLs are downloaded from https://reshade.me/ rather than included
+in this release. Unmodified DLLs retain their native About/license resources.
+The app's MIT license does not replace the licenses of ReShade or its dependencies.

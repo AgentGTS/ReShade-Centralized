@@ -84,7 +84,22 @@ internal static partial class TestSuite
         repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
         testRoot = Path.Combine(repositoryRoot, ".validation", "tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(testRoot);
+        CacheCompatibilityFixture(testRoot);
         Console.WriteLine("Isolated test workspace: " + testRoot);
+        await RunTestAsync("Unreal bootstrap resolution validates resources, targets, cycles and cancellation",
+            BootstrapResolutionUsesSafeTargetsAsync);
+        await RunTestAsync("DXVK and RTX Remix recommend Vulkan without touching unrelated or linked files",
+            TranslationLayersRecommendEffectiveRendererAsync);
+        await RunTestAsync("Compatibility rules validate install paths and preserve manual/custom settings",
+            CompatibilityRulesValidatePathsAndPreserveSettingsAsync);
+        await RunTestAsync("Executable API evidence wins filename collisions; unresolved detection uses catalog fallback",
+            ApiRecommendationsPreferExecutableEvidenceAsync);
+        await RunTestAsync("Startup preset migration preserves relative, absolute, empty and missing selections",
+            StartupPresetMigrationPreservesNativeResolutionAsync);
+        await RunTestAsync("Upstream catalogs are cached locally without bundled snapshots; failures preserve caches",
+            CatalogCachesReplaceBundledSnapshotsAsync);
+        await RunTestAsync("Shader installation retains root/nested license documents and tracks notice updates",
+            ShaderNoticesSurviveInstallationAndUpdatesAsync);
         await RunTestAsync("Explicit Vulkan removal preserves other installers' entries and runtime files",
             VulkanRemovalPreservesOtherRegistrationsAndFilesAsync);
         await RunTestAsync("Last Vulkan unregister keeps shared support and standalone consumers",
@@ -399,6 +414,12 @@ internal static partial class TestSuite
 
     private static async Task RunIntegrationTestsAsync()
     {
+        await RunTestAsync("Compatibility subfolders, hook names and architecture overrides survive repair/restart",
+            CompatibilityDeploymentSurvivesRepairAndRestartAsync);
+        await RunTestAsync("Compatibility adoption rechecks config sources and protects unsafe/conflicting destinations",
+            CompatibilityAdoptionAndConflictsPreserveFilesAsync);
+        await RunTestAsync("Manager deployment uses reviewed Unreal and RTX Remix executable destinations",
+            BootstrapAndRemixManagerDeploymentUsesResolvedExecutableAsync);
         await RunTestAsync(
             "Existing and dangling ReShade symlinks support review, preset adoption and rollback",
             ExistingReShadeSymlinksCanBeAdoptedAsync);

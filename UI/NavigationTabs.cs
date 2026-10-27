@@ -9,7 +9,7 @@ internal sealed class NavigationTabs : TabControl
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
             | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         SizeMode = TabSizeMode.Fixed;
-        ItemSize = new Size(174, 44);
+        ItemSize = new Size(160, 44);
         Padding = new Point(12, 6);
     }
 

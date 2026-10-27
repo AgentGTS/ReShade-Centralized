@@ -60,6 +60,8 @@ internal static partial class UiPreview
 
         gallery = Path.GetFullPath(gallery);
         Directory.CreateDirectory(gallery);
+        VerifyCredits(main, gallery);
+        VerifyCompatibilityReview(gallery);
         VerifyShaderInventoryAndGridLabels(main, gallery);
         TabControl tabs = Descendants(main).OfType<TabControl>().Single();
         for (var index = 0; index < tabs.TabCount; index++)

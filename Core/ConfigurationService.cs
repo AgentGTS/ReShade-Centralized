@@ -38,11 +38,16 @@ public static class ConfigurationService
             yield break;
         }
 
-        string path = Path.Combine(Path.GetDirectoryName(game.Executable)!, "reshade-shaders",
-            textures ? "Textures" : "Shaders");
-        if (Directory.Exists(path))
+        string executable = GameTargetResolver.Resolve(game.Executable).Executable;
+        string[] directories = [Path.GetDirectoryName(executable)!,
+            CompatibilityCatalog.Default.InstallationDirectory(executable, game.Api)];
+        foreach (string directory in directories.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            yield return Path.Combine(path, "**");
+            string path = Path.Combine(directory, "reshade-shaders", textures ? "Textures" : "Shaders");
+            if (Directory.Exists(path))
+            {
+                yield return Path.Combine(path, "**");
+            }
         }
     }
 
@@ -80,7 +85,7 @@ public static class ConfigurationService
     {
         string path = ConfigPath(game);
         IniDocument document = LoadConfiguration(path, initialText);
-        string originalBase = Path.GetDirectoryName(game.Executable)!;
+        string originalBase = CompatibilityCatalog.Default.InstallationDirectory(game.Executable, game.Api);
         string? baseOverride = IniDocument.Split(document.Get("INSTALL", "BasePath")).FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(baseOverride))
         {
@@ -92,7 +97,8 @@ public static class ConfigurationService
         {
             ("GENERAL", "EffectSearchPaths"),
             ("GENERAL", "TextureSearchPaths"),
-            ("GENERAL", "PresetPath")
+            ("GENERAL", "PresetPath"),
+            ("GENERAL", "StartupPresetPath")
         })
         {
             string? value = document.Get(section, key);
@@ -160,6 +166,7 @@ public static class ConfigurationService
         document.SetDefault("INPUT", "KeyOverlay", "36,0,0,0");
         document.SetDefault("GENERAL", "PerformanceMode", "0");
         document.SetDefault("GENERAL", "PresetTransitionDuration", "1000");
+        CompatibilityCatalog.Default.ApplyDefaults(document, game.Executable);
         transaction.WriteText(path, document.ToString());
     }
 

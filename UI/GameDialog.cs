@@ -115,7 +115,7 @@ internal sealed class GameDialog : Form
         GameProfile game = JsonSerializer.Deserialize<GameProfile>(
             JsonSerializer.Serialize(original, ManagerState.Json),
             ManagerState.Json)!;
-        game.Executable = executable.Text.Trim();
+        game.Executable = GameTargetResolver.Resolve(executable.Text.Trim()).Executable;
         game.Name = Path.GetFileName(game.Executable);
         game.Api = selectedApi;
         game.Build = game.Api == RenderApi.Vulkan ? global : selectedBuild;
@@ -388,7 +388,12 @@ internal sealed class GameDialog : Form
                 GameProfile game = Result();
                 game.Directory = ProfilePaths.DirectoryFor(state, game);
                 plan = DeploymentService.CreatePlan(state, game);
-                notice = new(plan.Describe(includePaths: false), plan.Conflict != null);
+                string message = plan.Describe(includePaths: false);
+                if (!FileTransaction.Same(game.Executable, executable.Text.Trim()))
+                {
+                    message = "Resolved executable: " + game.Executable + "\n\n" + message;
+                }
+                notice = new(message, plan.Conflict != null);
             }
             else
             {
@@ -399,8 +404,7 @@ internal sealed class GameDialog : Form
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or
             ArgumentException or Win32Exception)
         {
-            notice = new("Cannot review this installation. Check folder permissions and close programs using " +
-                "its ReShade files, then select the executable again.", true);
+            notice = new("Cannot review this installation. " + error.Message, true);
         }
 
         if (ReviewedPlan?.Fingerprint != plan?.Fingerprint)

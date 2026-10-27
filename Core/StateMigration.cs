@@ -201,7 +201,8 @@ internal static class StateMigration
         }
         if (File.Exists(executable))
         {
-            CpuArchitecture architecture = PortableExecutable.Architecture(executable);
+            CpuArchitecture architecture = CompatibilityCatalog.Default.Architecture(executable,
+                game["Api"]?.Deserialize<RenderApi>(ManagerState.Json) ?? RenderApi.DXGI);
             if (game["Architecture"]?.ToString() != architecture.ToString())
             {
                 game["Architecture"] = architecture.ToString();
@@ -217,12 +218,12 @@ internal static class StateMigration
                 displayName + ".");
         }
 
-        var expected = new List<OwnedLink> { new(Path.Combine(Path.GetDirectoryName(executable)!, "ReShade.ini"),
-            Path.Combine(profile, "ReShade.ini")) };
-        if (DeploymentService.Proxy(parsed.Api) is string proxy)
+        var expected = DeploymentService.ConfigurationPaths(executable, parsed.Api)
+            .Select(path => new OwnedLink(path, Path.Combine(profile, "ReShade.ini"))).ToList();
+        if (CompatibilityCatalog.Default.Proxy(executable, parsed.Api) is string proxy)
         {
             string dll = parsed.Architecture == CpuArchitecture.X64 ? "ReShade64.dll" : "ReShade32.dll";
-            expected.Add(new(Path.Combine(Path.GetDirectoryName(executable)!, proxy),
+            expected.Add(new(Path.Combine(CompatibilityCatalog.Default.InstallationDirectory(executable, parsed.Api), proxy),
                 Path.Combine(paths.Binaries(parsed.Build), dll)));
         }
         var recordedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
