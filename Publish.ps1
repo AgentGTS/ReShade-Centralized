@@ -1,9 +1,8 @@
-param([string]$OutputDirectory = '')
 $ErrorActionPreference = 'Stop'
 $repo = $PSScriptRoot
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repo 'artifacts\win-x64' }
-$OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
-dotnet restore (Join-Path $repo 'ReShade Centralized.csproj') -r win-x64 -p:SelfContained=true --nologo
+$release = Join-Path $repo 'release'
+$project = Join-Path $repo 'ReShade Centralized.csproj'
+dotnet restore $project -r win-x64 -p:SelfContained=true --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
 $assets = Get-Content -LiteralPath (Join-Path $repo 'obj\project.assets.json') -Raw | ConvertFrom-Json
 $noticeParts = New-Object 'System.Collections.Generic.List[string]'
@@ -36,20 +35,14 @@ foreach ($dependency in $dependencies) {
 if (-not $dependencies) { throw 'No self-contained runtime license dependencies were found.' }
 $embeddedNotices = Join-Path $repo 'obj\ReleaseThirdPartyNotices.txt'
 [IO.File]::WriteAllText($embeddedNotices, [string]::Join("`n`n", $noticeParts))
-dotnet publish (Join-Path $repo 'ReShade Centralized.csproj') -c Release -r win-x64 --self-contained true --no-restore `
+dotnet publish $project -c Release -r win-x64 --self-contained true --no-restore `
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
-    -p:DebugType=None -p:DebugSymbols=false "-p:GeneratedThirdPartyNotices=$embeddedNotices" -o $OutputDirectory --nologo
+    -p:DebugType=None -p:DebugSymbols=false "-p:GeneratedThirdPartyNotices=$embeddedNotices" -o $release --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
-Copy-Item -LiteralPath (Join-Path $repo 'README.md'), (Join-Path $repo 'LICENSE.md') -Destination $OutputDirectory
-$thirdParty = Join-Path $OutputDirectory 'THIRD-PARTY-NOTICES.txt'
-Copy-Item -LiteralPath $embeddedNotices -Destination $thirdParty
-$binary = Join-Path $OutputDirectory 'ReShade Centralized.exe'
-$appVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($binary).ProductVersion.Split('+')[0]
+Copy-Item -LiteralPath (Join-Path $repo 'README.md'), (Join-Path $repo 'LICENSE.md') -Destination $release
+Copy-Item -LiteralPath $embeddedNotices -Destination (Join-Path $release 'THIRD-PARTY-NOTICES.txt')
+$binary = Join-Path $release 'ReShade Centralized.exe'
 $hash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
-[IO.File]::WriteAllText((Join-Path $OutputDirectory 'SHA256SUMS.txt'), "$hash  ReShade Centralized.exe`n")
-$zip = Join-Path (Split-Path -Parent $OutputDirectory) "ReShade-Centralized-$appVersion-win-x64.zip"
-# Package only release files, even when a prior executable has already created manager data.
-Compress-Archive -LiteralPath $binary, (Join-Path $OutputDirectory 'README.md'), (Join-Path $OutputDirectory 'LICENSE.md'), `
-    (Join-Path $OutputDirectory 'SHA256SUMS.txt'), $thirdParty -DestinationPath $zip -Force
-Write-Host "Release: $zip"
+[IO.File]::WriteAllText((Join-Path $release 'SHA256SUMS.txt'), "$hash  ReShade Centralized.exe`n")
+Write-Host "Release: $release"
 Write-Host "SHA-256: $hash"

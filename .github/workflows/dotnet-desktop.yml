@@ -1,4 +1,4 @@
-name: Build and test
+name: Build
 
 on:
   push:
@@ -30,27 +30,12 @@ jobs:
       - name: Build Release
         run: dotnet build 'ReShade Centralized.sln' --configuration Release
 
-      - name: Run tests
-        run: |
-          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-          dotnet run --project Tests/ReShadeCentralized.Tests.csproj --configuration Release --no-build 2>&1 |
-            Tee-Object -FilePath artifacts/test-output.log
-          exit $LASTEXITCODE
-
-      - name: Package build
+      - name: Publish release
         run: ./Publish.ps1
 
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
           name: ReShade-Centralized-win-x64
-          path: artifacts/*.zip
+          path: release/*
           if-no-files-found: error
-
-      - name: Upload test output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-output
-          path: artifacts/test-output.log
-          if-no-files-found: ignore

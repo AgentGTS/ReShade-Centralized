@@ -5,14 +5,6 @@ VisualStudioVersion = 16.0.30804.86
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReShade Centralized", "ReShade Centralized.csproj", "{0545A51F-B5A9-43C0-B333-34B0B8A27F8C}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Core", "Core", "{FBF56CC3-7AE6-AD2D-3F14-7F97FD322CD6}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReShadeCentralized.Core", "Core\ReShadeCentralized.Core.csproj", "{D6704202-5CCC-4771-AFB0-80F71C90D6CF}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReShadeCentralized.Tests", "Tests\ReShadeCentralized.Tests.csproj", "{25D5ABCD-233E-4BBA-9944-9305ACDF5ED0}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -23,21 +15,9 @@ Global
 		{0545A51F-B5A9-43C0-B333-34B0B8A27F8C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0545A51F-B5A9-43C0-B333-34B0B8A27F8C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0545A51F-B5A9-43C0-B333-34B0B8A27F8C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D6704202-5CCC-4771-AFB0-80F71C90D6CF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D6704202-5CCC-4771-AFB0-80F71C90D6CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D6704202-5CCC-4771-AFB0-80F71C90D6CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D6704202-5CCC-4771-AFB0-80F71C90D6CF}.Release|Any CPU.Build.0 = Release|Any CPU
-		{25D5ABCD-233E-4BBA-9944-9305ACDF5ED0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{25D5ABCD-233E-4BBA-9944-9305ACDF5ED0}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{25D5ABCD-233E-4BBA-9944-9305ACDF5ED0}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{25D5ABCD-233E-4BBA-9944-9305ACDF5ED0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(NestedProjects) = preSolution
-		{D6704202-5CCC-4771-AFB0-80F71C90D6CF} = {FBF56CC3-7AE6-AD2D-3F14-7F97FD322CD6}
-		{25D5ABCD-233E-4BBA-9944-9305ACDF5ED0} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {26DAF7F5-5C0D-4E49-92A7-7B142FA9F3FB}

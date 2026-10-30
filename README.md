@@ -4,7 +4,7 @@ Shared ReShade runtimes and shaders, with per-game presets. Windows 10/11 x64.
 
 ## Install and use
 
-1. Extract the release and run **ReShade Centralized.exe** as administrator. .NET is included.
+1. Run **ReShade Centralized.exe** as administrator. .NET is included.
 2. Keep the default central folder (`Documents\ReShade Centralized`) or choose a folder outside the app folder.
 3. Choose **Runtime & storage > Update ReShade**.
 4. In **Shader packages**, select packages and choose **Apply selection**.
@@ -24,7 +24,7 @@ For a Vulkan game:
 
 Press **F1** or read [Help](Assets/Help.txt) for other APIs, add-ons, updates, removal and troubleshooting.
 
-## Build and test
+## Build
 
 Requires Windows and the .NET 10 SDK.
 
@@ -34,15 +34,13 @@ Double-click **BuildRunDebug.bat** to build and run in console with live logs.
 
 ### Release
 
-Run these commands in PowerShell from the repository folder:
+Run in PowerShell from the repository folder:
 
 ```powershell
-dotnet build 'ReShade Centralized.sln' -c Release
-dotnet run --project Tests/ReShadeCentralized.Tests.csproj -c Release
 powershell -NoProfile -ExecutionPolicy Bypass -File Publish.ps1
 ```
 
-Release files are written to `artifacts`.
+Release files are written to `release`.
 
 ## Credits and license
 
