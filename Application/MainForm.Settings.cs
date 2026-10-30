@@ -84,26 +84,20 @@ public sealed partial class MainForm
 
     private async Task ImportRuntimeAsync()
     {
-        using var first = new OpenFileDialog
-        {
-            Title = "Select the standard official ReShade installer",
-            Filter = "ReShade installer|*.exe"
-        };
-        if (first.ShowDialog(this) != DialogResult.OK)
+        string? standard = DialogLayout.PickFile(this, "ReShade installer|*.exe",
+            "Select the standard official ReShade installer");
+        if (standard == null)
         {
             return;
         }
 
-        using var second = new OpenFileDialog
-        {
-            Title = $"Select the official {DisplayNames.For(RuntimeBuild.FullAddon)} ReShade installer",
-            Filter = "ReShade installer|*.exe"
-        };
-        if (second.ShowDialog(this) == DialogResult.OK)
+        string? addon = DialogLayout.PickFile(this, "ReShade installer|*.exe",
+            $"Select the official {DisplayNames.For(RuntimeBuild.FullAddon)} ReShade installer");
+        if (addon != null)
         {
             await RunOperationAsync(
                 "Importing ReShade installers",
-                cancellationToken => runtimes.ImportRuntimeAsync(first.FileName, second.FileName, cancellationToken));
+                cancellationToken => runtimes.ImportRuntimeAsync(standard, addon, cancellationToken));
         }
     }
 

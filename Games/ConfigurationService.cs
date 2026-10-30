@@ -93,58 +93,41 @@ public static class ConfigurationService
         }
 
         // Once BasePath points at the central profile, preserve the meaning of old relative paths.
-        foreach ((string? section, string? key) in new[]
+        foreach (string key in new[]
         {
-            ("GENERAL", "EffectSearchPaths"),
-            ("GENERAL", "TextureSearchPaths"),
-            ("GENERAL", "PresetPath"),
-            ("GENERAL", "StartupPresetPath")
+            "EffectSearchPaths", "TextureSearchPaths", "PresetPath", "StartupPresetPath"
         })
         {
-            string? value = document.Get(section, key);
+            string? value = document.Get("GENERAL", key);
             if (value != null)
             {
-                var resolvedPaths = IniDocument.Split(value).Select(searchPath =>
-                    string.IsNullOrWhiteSpace(searchPath) || Path.IsPathFullyQualified(searchPath)
-                        ? searchPath
-                        : Path.GetFullPath(searchPath, originalBase));
-                document.Set(section, key, IniDocument.Join(resolvedPaths));
+                document.Set("GENERAL", key, IniDocument.Join(IniDocument.Split(value)
+                    .Select(searchPath => ResolvePath(searchPath, originalBase))));
             }
         }
 
         string? addonPath = IniDocument.Split(document.Get("ADDON", "AddonPath")).FirstOrDefault();
         if (addonPath != null)
         {
-            string resolved = string.IsNullOrWhiteSpace(addonPath) || Path.IsPathFullyQualified(addonPath)
-                ? addonPath : Path.GetFullPath(addonPath, originalBase);
-            document.Set("ADDON", "AddonPath", IniDocument.Join([resolved]));
+            document.Set("ADDON", "AddonPath", IniDocument.Join([ResolvePath(addonPath, originalBase)]));
         }
 
         document.Set("INSTALL", "BasePath", IniDocument.Join([game.Directory]));
-        if (removedSearchRoots != null)
+        foreach (bool textures in new[] { false, true })
         {
-            foreach (string key in new[] { "EffectSearchPaths", "TextureSearchPaths" })
+            string key = textures ? "TextureSearchPaths" : "EffectSearchPaths";
+            string? existing = document.Get("GENERAL", key);
+            if (removedSearchRoots != null)
             {
-                string[] retained = IniDocument.Split(document.Get("GENERAL", key)).Where(search =>
+                existing = IniDocument.Join(IniDocument.Split(existing).Where(search =>
                     string.IsNullOrWhiteSpace(search) || !removedSearchRoots.Any(root =>
                         LocalFiles.Same(search.TrimEnd('\\', '/', '*'), root) ||
                         search.StartsWith(root.TrimEnd('\\', '/') + Path.DirectorySeparatorChar,
-                            StringComparison.OrdinalIgnoreCase))).ToArray();
-                document.Set("GENERAL", key, IniDocument.Join(retained));
+                            StringComparison.OrdinalIgnoreCase))));
             }
+            document.Set("GENERAL", key, ManagedList(existing,
+                SearchPaths(state, textures).Concat(LocalSearchPaths(game, textures))));
         }
-        document.Set(
-            "GENERAL",
-            "EffectSearchPaths",
-            ManagedList(
-                document.Get("GENERAL", "EffectSearchPaths"),
-                SearchPaths(state, false).Concat(LocalSearchPaths(game, false))));
-        document.Set(
-            "GENERAL",
-            "TextureSearchPaths",
-            ManagedList(
-                document.Get("GENERAL", "TextureSearchPaths"),
-                SearchPaths(state, true).Concat(LocalSearchPaths(game, true))));
         document.Set("GENERAL", "IntermediateCachePath", IniDocument.Join([Path.Combine(game.Directory, "Cache")]));
         string preset = Path.Combine(game.Directory, "ReShadePreset.ini");
         if (!File.Exists(preset))
@@ -169,5 +152,8 @@ public static class ConfigurationService
         CompatibilityCatalog.Default.ApplyDefaults(document, game.Executable);
         transaction.WriteText(path, document.ToString());
     }
+
+    private static string ResolvePath(string path, string directory) =>
+        string.IsNullOrWhiteSpace(path) || Path.IsPathFullyQualified(path) ? path : Path.GetFullPath(path, directory);
 
 }

@@ -1,6 +1,4 @@
 using System.Reflection;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace ReShadeCentralized;
@@ -31,7 +29,7 @@ public sealed class ShaderCatalog(Downloads downloads, StateStore store)
     {
         string canonical = CanonicalRepository(repository);
         string slug = Regex.Replace(new Uri(canonical).AbsolutePath.Trim('/'), "[^a-z0-9]+", "-");
-        string repositoryHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        string repositoryHash = LocalFiles.HashText(canonical);
         return $"{slug}-{repositoryHash[..8].ToLowerInvariant()}";
     }
 
@@ -68,35 +66,11 @@ public sealed class ShaderCatalog(Downloads downloads, StateStore store)
         return packages;
     }
 
-    public async Task<List<ShaderPackage>> CatalogAsync(
+    public Task<List<ShaderPackage>> CatalogAsync(
         IProgress<string>? progress,
-        CancellationToken cancellationToken)
-    {
-        string cache = Path.Combine(store.DirectoryPath, CacheName);
-        List<ShaderPackage> catalog;
-        try
-        {
-            progress?.Report("Downloading shader package information from upstream...");
-            string text = await CatalogCache.DownloadAsync(downloads, CatalogUrl, cache, text =>
-            {
-                if (!Parse(text).Any(package => package.Required))
-                {
-                    throw new InvalidDataException("Catalog is missing required standard effects.");
-                }
-            }, cancellationToken);
-            catalog = Combine(Parse(text));
-        }
-        catch (Exception error) when (error is HttpRequestException or IOException or InvalidDataException or
-            UnauthorizedAccessException ||
-            (error is TaskCanceledException && !cancellationToken.IsCancellationRequested))
-        {
-            progress?.Report("Shader catalog download unavailable; using the cache or minimal offline list. " +
-                error.Message);
-            catalog = CachedCatalog(progress);
-        }
-
-        return catalog;
-    }
+        CancellationToken cancellationToken) =>
+        CatalogCache.RefreshAsync(downloads, CatalogUrl, Path.Combine(store.DirectoryPath, CacheName),
+            text => Combine(ParseRequired(text)), () => CachedCatalog(progress), progress, cancellationToken);
 
     public List<ShaderPackage> CachedCatalog(IProgress<string>? progress = null)
     {
@@ -106,11 +80,7 @@ public sealed class ShaderCatalog(Downloads downloads, StateStore store)
         {
             try
             {
-                List<ShaderPackage> packages = Parse(cached);
-                if (packages.Any(package => package.Required))
-                {
-                    return Combine(packages);
-                }
+                return Combine(ParseRequired(cached));
             }
             catch (Exception error) when (error is InvalidDataException)
             {
@@ -134,5 +104,12 @@ public sealed class ShaderCatalog(Downloads downloads, StateStore store)
     private static List<ShaderPackage> Combine(IEnumerable<ShaderPackage> official) =>
         official.Concat(Parse(Resource("ExtraPackages.ini")))
             .DistinctBy(package => CanonicalRepository(package.Repository)).ToList();
+
+    private static List<ShaderPackage> ParseRequired(string text)
+    {
+        List<ShaderPackage> packages = Parse(text);
+        return packages.Any(package => package.Required) ? packages :
+            throw new InvalidDataException("Catalog is missing required standard effects.");
+    }
 
 }

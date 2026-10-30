@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
 namespace ReShadeCentralized;
@@ -20,6 +18,22 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             report.Messages.Add(message);
             progress?.Report(message);
         }
+        void ReportResult((bool Success, string Message) result, bool removal = false)
+        {
+            if (!result.Success)
+            {
+                report.FailedCount++;
+            }
+            else if (removal)
+            {
+                report.RemovedCount++;
+            }
+            else
+            {
+                report.InstalledCount++;
+            }
+            Report(result.Message);
+        }
 
         await storage.RunAsync(async () =>
         {
@@ -34,11 +48,7 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             }
 
             IReadOnlyList<ShaderPackage> packages = ShaderDependencies.WithDependencies(
-                selected, catalog, (package, message) =>
-                {
-                    report.FailedCount++;
-                    Report($"Skipped {package.Name}: {message}");
-                });
+                selected, catalog, (package, message) => ReportResult((false, $"Skipped {package.Name}: {message}")));
             ShaderPackage[] desired = selected.Concat(packages).DistinctBy(package => package.Id).ToArray();
             if (reviewedPlan != null)
             {
@@ -52,31 +62,20 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
                         ShaderFiles.IsPackageComplete(installed, storage.State.Paths))).ToArray();
                 if (missingDependencies.Length > 0)
                 {
-                    report.FailedCount++;
-                    Report($"Skipped {package.Name}: required packages are unavailable: " +
+                    ReportResult((false, $"Skipped {package.Name}: required packages are unavailable: " +
                         string.Join(", ", missingDependencies.Select(dependency => dependency.Name)) +
                         ". In Shader packages, select those packages and apply the selection again. " +
-                        "Existing files were retained.");
+                        "Existing files were retained."));
                     continue;
                 }
 
-                (bool installed, string message) = await UpdatePackageAsync(
+                ReportResult(await UpdatePackageAsync(
                     package,
                     desired,
                     rememberSelection,
                     progress,
                     report.Messages,
-                    cancellationToken);
-                if (installed)
-                {
-                    report.InstalledCount++;
-                }
-                else
-                {
-                    report.FailedCount++;
-                }
-
-                Report(message);
+                    cancellationToken));
             }
 
             if (reviewedPlan != null)
@@ -84,30 +83,17 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
                 foreach (InstalledPackage removal in OrderShaderRemovals(currentPlan!.Removals, catalog))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    (bool removed, string message) = RemoveShaderPackage(removal, desired, catalog, cancellationToken);
-                    if (removed)
-                    {
-                        report.RemovedCount++;
-                    }
-                    else
-                    {
-                        report.FailedCount++;
-                    }
-                    Report(message);
+                    ReportResult(RemoveShaderPackage(removal, desired, catalog, cancellationToken), removal: true);
                 }
             }
 
-            using FileTransaction choices = storage.BeginTransaction("Save shader package selection");
             cancellationToken.ThrowIfCancellationRequested();
-            ManagerState finalState = storage.State!.Clone();
             if (rememberSelection)
             {
-                finalState.SelectedPackages = selected.Concat(catalog.Where(package => package.Required))
-                    .Concat(packages).Select(package => package.Id).Distinct().ToList();
+                SaveShaderChoices(selected.Concat(catalog.Where(package => package.Required))
+                    .Concat(packages).DistinctBy(package => package.Id).ToArray(), cancellationToken);
             }
-
-            storage.Commit(finalState, choices, cancellationToken);
-            foreach (string duplicate in ShaderFiles.DuplicateEffects(finalState))
+            foreach (string duplicate in ShaderFiles.DuplicateEffects(storage.State!))
             {
                 Report("Duplicate effect filename: " + duplicate);
             }
@@ -121,44 +107,9 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
         {
             ManagerState updatedState = storage.RequireState().Clone();
             string root = updatedState.Paths.ShaderRoot;
-            LocalFiles.CheckParents(Path.Combine(root, "check"));
-            if (LocalFiles.Link(root) != null || File.Exists(root))
-            {
-                throw new IOException("The central shader folder must be a regular directory: " + root);
-            }
-
-            var files = new List<string>();
-            if (Directory.Exists(root))
-            {
-                foreach (string file in ShaderFiles.EnumerateFiles(root))
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    files.Add(file);
-                }
-            }
-
-            progress?.Report($"Purging {files.Count} files from {root}");
-            using (FileTransaction transaction = storage.BeginTransaction("Purge central shader folder"))
-            {
-                foreach (string file in files)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    transaction.Delete(file);
-                }
-
-                updatedState.Packages.Clear();
-                storage.Commit(updatedState, transaction, cancellationToken);
-            }
-
-            try
-            {
-                RemoveEmptyShaderFolders(root);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-                storage.ReportWarning("Shader files were purged, but empty folders could not be removed: " + root +
-                    ". " + error.Message);
-            }
+            RemoveShaderFiles(updatedState, [root], "Purge central shader folder",
+                _ => updatedState.Packages.Clear(), cancellationToken,
+                count => progress?.Report($"Purging {count} files from {root}"));
 
             progress?.Report("Central shader folder purged. Choose Apply selection to reinstall packages.");
             return Task.CompletedTask;
@@ -272,7 +223,7 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             .OrderBy(package => package.Id, StringComparer.Ordinal).ToArray();
         string input = state.Paths.Root + JsonSerializer.Serialize(desired, ManagerState.Json) +
             JsonSerializer.Serialize(removals, ManagerState.Json);
-        string fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input)));
+        string fingerprint = LocalFiles.HashText(input);
         return new(desired, removals, fingerprint);
     }
 
@@ -339,32 +290,8 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             ManagerState updated = storage.State!.Clone();
             string[] roots = [ShaderFiles.PackageDirectory(updated.Paths.Shaders, package.Id),
                 ShaderFiles.PackageDirectory(updated.Paths.Textures, package.Id)];
-            var files = new List<string>();
-            foreach (string root in roots)
+            RemoveShaderFiles(updated, roots, "Remove shader package: " + package.Name, transaction =>
             {
-                LocalFiles.CheckParents(Path.Combine(root, "check"));
-                if (LocalFiles.Link(root) != null || File.Exists(root))
-                {
-                    throw new IOException("A package folder must be a regular directory: " + root);
-                }
-                if (Directory.Exists(root))
-                {
-                    foreach (string file in ShaderFiles.EnumerateFiles(root))
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        files.Add(file);
-                    }
-                }
-            }
-
-            using (FileTransaction transaction = storage.BeginTransaction("Remove shader package: " + package.Name))
-            {
-                foreach (string file in files)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    transaction.Delete(file);
-                }
-
                 updated.Packages.RemoveAll(entry => entry.Id == package.Id);
                 updated.SelectedPackages = desired.Select(entry => entry.Id).ToList();
                 foreach (GameProfile game in updated.Games)
@@ -372,26 +299,59 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
                     ConfigurationService.Update(updated, game, transaction, removedSearchRoots: roots);
                 }
 
-                storage.Commit(updated, transaction, cancellationToken);
-            }
-
-            foreach (string root in roots)
-            {
-                try
-                {
-                    RemoveEmptyShaderFolders(root);
-                }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-                {
-                    storage.ReportWarning("Package removed; folder could not be cleaned: " + root + ". " + error.Message);
-                }
-            }
+            }, cancellationToken);
             return (true, "Removed: " + package.Name);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             return (false, $"Failed to remove {package.Name}: {UserErrors.Describe(error)}\n" +
                 "Package files were retained.");
+        }
+    }
+
+    private void RemoveShaderFiles(
+        ManagerState state, IReadOnlyList<string> roots, string description,
+        Action<FileTransaction> updateState, CancellationToken cancellationToken, Action<int>? beforeDelete = null)
+    {
+        var files = new List<string>();
+        foreach (string root in roots)
+        {
+            LocalFiles.CheckParents(Path.Combine(root, "check"));
+            if (LocalFiles.Link(root) != null || File.Exists(root))
+            {
+                throw new IOException("A shader folder must be a regular directory: " + root);
+            }
+            if (Directory.Exists(root))
+            {
+                foreach (string file in ShaderFiles.EnumerateFiles(root))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    files.Add(file);
+                }
+            }
+        }
+        beforeDelete?.Invoke(files.Count);
+        using (FileTransaction transaction = storage.BeginTransaction(description))
+        {
+            foreach (string file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                transaction.Delete(file);
+            }
+            updateState(transaction);
+            storage.Commit(state, transaction, cancellationToken);
+        }
+        foreach (string root in roots)
+        {
+            try
+            {
+                RemoveEmptyShaderFolders(root);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                storage.ReportWarning(description + " completed, but empty folders could not be removed: " +
+                    root + ". " + error.Message);
+            }
         }
     }
 

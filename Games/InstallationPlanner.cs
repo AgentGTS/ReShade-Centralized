@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using static ReShadeCentralized.GameFiles;
 
 namespace ReShadeCentralized;
@@ -86,8 +84,7 @@ public static class InstallationPlanner
             .Concat(ConfigurationService.LocalSearchPaths(game, true)).ToArray();
         observations.AddRange(localPaths);
         observations.Add(preset ?? "");
-        byte[] fingerprintBytes = SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", observations)));
-        string fingerprint = Convert.ToHexString(fingerprintBytes);
+        string fingerprint = LocalFiles.HashText(string.Join("\n", observations));
         return new(directory, profile, links, removedLinks, localPaths, preset, fingerprint, conflict)
         {
             Executable = executable,

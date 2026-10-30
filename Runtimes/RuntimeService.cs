@@ -7,6 +7,9 @@ namespace ReShadeCentralized;
 
 public sealed class RuntimeService(Downloads downloads)
 {
+    public static readonly string[] PayloadFiles =
+        ["ReShade32.dll", "ReShade64.dll", "ReShade32.json", "ReShade64.json"];
+
     public static IReadOnlyDictionary<RuntimeBuild, string> Discover(string html)
     {
         var result = new Dictionary<RuntimeBuild, string>();
@@ -137,13 +140,7 @@ public sealed class RuntimeService(Downloads downloads)
         {
             string source = Path.Combine(staging, build.ToString());
             state.RuntimeVersions[build] = version;
-            foreach (string name in new[]
-            {
-                "ReShade32.dll",
-                "ReShade64.dll",
-                "ReShade32.json",
-                "ReShade64.json"
-            })
+            foreach (string name in PayloadFiles)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 string target = Path.Combine(state.Paths.Binaries(build), name);

@@ -95,18 +95,10 @@ internal static class DialogLayout
         {
             if (file)
             {
-                string selectedFile;
-                using (var dialog = new OpenFileDialog
+                string? selectedFile = PickFile(box.FindForm(), filter);
+                if (selectedFile == null)
                 {
-                    Filter = filter,
-                    CheckFileExists = true
-                })
-                {
-                    if (dialog.ShowDialog(box.FindForm()) != DialogResult.OK)
-                    {
-                        return;
-                    }
-                    selectedFile = dialog.FileName;
+                    return;
                 }
 
                 box.Text = selectedFile;
@@ -130,6 +122,12 @@ internal static class DialogLayout
             }
         };
         return panel;
+    }
+
+    public static string? PickFile(IWin32Window? owner, string filter, string title = "")
+    {
+        using var dialog = new OpenFileDialog { Title = title, Filter = filter, CheckFileExists = true };
+        return dialog.ShowDialog(owner) == DialogResult.OK ? dialog.FileName : null;
     }
 
     public static Button Buttons(TableLayoutPanel table, Form form, string accept = "Save")

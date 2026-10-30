@@ -74,30 +74,16 @@ public sealed class CompatibilityCatalog
     public static async Task RefreshAsync(
         Downloads downloads, string path, IProgress<string>? progress, CancellationToken cancellationToken)
     {
-        try
+        Default = await CatalogCache.RefreshAsync(downloads, CatalogUrl, path, text =>
         {
-            progress?.Report("Downloading game compatibility information from upstream...");
-            string text = await CatalogCache.DownloadAsync(downloads, CatalogUrl, path, text =>
-            {
-                if (new CompatibilityCatalog(text).Count == 0)
-                {
-                    throw new InvalidDataException("Compatibility catalog has no executable entries.");
-                }
-            }, cancellationToken);
-            Default = new(text);
-        }
-        catch (Exception error) when (error is HttpRequestException or IOException or InvalidDataException or
-            UnauthorizedAccessException ||
-            (error is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+            var catalog = new CompatibilityCatalog(text);
+            return catalog.Count > 0 ? catalog :
+                throw new InvalidDataException("Compatibility catalog has no executable entries.");
+        }, () => new CompatibilityCatalog(CatalogCache.Read(path, progress) ?? ""), progress, cancellationToken);
+        if (Default.Count == 0)
         {
-            progress?.Report("Compatibility download unavailable; using the local cache when available. " +
-                error.Message);
-            LoadCache(path, progress);
-            if (Default.Count == 0)
-            {
-                progress?.Report("No compatibility cache is available; " +
-                    "use internal detection or choose the API manually.");
-            }
+            progress?.Report("No compatibility cache is available; " +
+                "use internal detection or choose the API manually.");
         }
     }
 

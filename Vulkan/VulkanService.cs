@@ -189,7 +189,7 @@ public sealed partial class VulkanService(ILayerRegistry registry)
         string view,
         FileTransaction transaction)
     {
-        if (new[] { "ReShade32.dll", "ReShade64.dll", "ReShade32.json", "ReShade64.json" }
+        if (RuntimeService.PayloadFiles
             .Any(name => !File.Exists(Path.Combine(binaries, name))))
         {
             throw new InvalidOperationException("The Vulkan runtime is not installed completely. " +

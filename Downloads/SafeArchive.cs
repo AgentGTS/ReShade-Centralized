@@ -94,13 +94,7 @@ public static class SafeArchive
             input.CopyTo(payload);
             payload.Position = 0;
             using var zip = new ZipArchive(payload, ZipArchiveMode.Read);
-            foreach (string file in new[]
-            {
-                "ReShade32.dll",
-                "ReShade64.dll",
-                "ReShade32.json",
-                "ReShade64.json"
-            })
+            foreach (string file in RuntimeService.PayloadFiles)
             {
                 ZipArchiveEntry[] entries = zip.Entries.Where(item => item.FullName == file).ToArray();
                 if (entries.Length != 1 || entries[0].Length > 128L * 1024 * 1024)
@@ -113,13 +107,7 @@ public static class SafeArchive
 
             // Extract only supported payloads, never execute bundled tools or add-ons.
             Directory.CreateDirectory(destination);
-            foreach (string file in new[]
-            {
-                "ReShade32.dll",
-                "ReShade64.dll",
-                "ReShade32.json",
-                "ReShade64.json"
-            })
+            foreach (string file in RuntimeService.PayloadFiles)
             {
                 zip.GetEntry(file)!.ExtractToFile(Path.Combine(destination, file));
             }

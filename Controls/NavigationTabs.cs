@@ -11,6 +11,10 @@ internal sealed class NavigationTabs : TabControl
         SizeMode = TabSizeMode.Fixed;
         ItemSize = new Size(160, 44);
         Padding = new Point(12, 6);
+        SelectedIndexChanged += (_, _) => Invalidate();
+        EnabledChanged += (_, _) => Invalidate();
+        GotFocus += (_, _) => Invalidate();
+        LostFocus += (_, _) => Invalidate();
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
@@ -83,27 +87,4 @@ internal sealed class NavigationTabs : TabControl
         Invalidate();
     }
 
-    protected override void OnSelectedIndexChanged(EventArgs e)
-    {
-        base.OnSelectedIndexChanged(e);
-        Invalidate();
-    }
-
-    protected override void OnEnabledChanged(EventArgs e)
-    {
-        base.OnEnabledChanged(e);
-        Invalidate();
-    }
-
-    protected override void OnGotFocus(EventArgs e)
-    {
-        base.OnGotFocus(e);
-        Invalidate();
-    }
-
-    protected override void OnLostFocus(EventArgs e)
-    {
-        base.OnLostFocus(e);
-        Invalidate();
-    }
 }

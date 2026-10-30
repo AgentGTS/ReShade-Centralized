@@ -1,9 +1,12 @@
 using System.Security.Cryptography;
+using System.Text;
 
 namespace ReShadeCentralized;
 
 public static class LocalFiles
 {
+    public static string HashText(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+
     public static string Hash(string path)
     {
         using FileStream stream = File.OpenRead(path);

@@ -20,6 +20,21 @@ internal sealed class FlatButton : Button
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
             | ControlStyles.OptimizedDoubleBuffer, true);
         ApplyTheme();
+        MouseEnter += (_, _) => SetInteraction(hovered: true, pressed);
+        MouseLeave += (_, _) => SetInteraction(hovered: false, pressed: false);
+        MouseDown += (_, e) => SetInteraction(hovered, pressed: e.Button == MouseButtons.Left);
+        MouseUp += (_, _) => SetInteraction(hovered, pressed: false);
+        KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Space)
+            {
+                SetInteraction(hovered, pressed: true);
+            }
+        };
+        KeyUp += (_, _) => SetInteraction(hovered, pressed: false);
+        GotFocus += (_, _) => Invalidate();
+        LostFocus += (_, _) => SetInteraction(hovered, pressed: false);
+        EnabledChanged += (_, _) => SetInteraction(hovered, pressed: false);
     }
 
     public void ApplyTheme()
@@ -73,69 +88,10 @@ internal sealed class FlatButton : Button
         }
     }
 
-    protected override void OnMouseEnter(EventArgs e)
+    private void SetInteraction(bool hovered, bool pressed)
     {
-        base.OnMouseEnter(e);
-        hovered = true;
-        Invalidate();
-    }
-
-    protected override void OnMouseLeave(EventArgs e)
-    {
-        base.OnMouseLeave(e);
-        hovered = false;
-        pressed = false;
-        Invalidate();
-    }
-
-    protected override void OnMouseDown(MouseEventArgs e)
-    {
-        base.OnMouseDown(e);
-        pressed = e.Button == MouseButtons.Left;
-        Invalidate();
-    }
-
-    protected override void OnMouseUp(MouseEventArgs e)
-    {
-        base.OnMouseUp(e);
-        pressed = false;
-        Invalidate();
-    }
-
-    protected override void OnKeyDown(KeyEventArgs e)
-    {
-        base.OnKeyDown(e);
-        if (e.KeyCode == Keys.Space)
-        {
-            pressed = true;
-            Invalidate();
-        }
-    }
-
-    protected override void OnKeyUp(KeyEventArgs e)
-    {
-        base.OnKeyUp(e);
-        pressed = false;
-        Invalidate();
-    }
-
-    protected override void OnGotFocus(EventArgs e)
-    {
-        base.OnGotFocus(e);
-        Invalidate();
-    }
-
-    protected override void OnLostFocus(EventArgs e)
-    {
-        base.OnLostFocus(e);
-        pressed = false;
-        Invalidate();
-    }
-
-    protected override void OnEnabledChanged(EventArgs e)
-    {
-        base.OnEnabledChanged(e);
-        pressed = false;
+        this.hovered = hovered;
+        this.pressed = pressed;
         Invalidate();
     }
 }

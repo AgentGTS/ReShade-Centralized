@@ -118,10 +118,7 @@ public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : 
                         Directory.CreateDirectory(path);
                     }
 
-                    cancellationToken.ThrowIfCancellationRequested();
-                    Store.Save(updatedState, transaction);
-                    transaction.Commit();
-                    State = updatedState;
+                    Commit(updatedState, transaction, cancellationToken);
                 }
             }
             catch
