@@ -9,8 +9,8 @@ public sealed class ShaderCatalog(Downloads downloads, StateStore store)
         "https://raw.githubusercontent.com/crosire/reshade-shaders/list/EffectPackages.ini";
     public const string CacheName = "CatalogCache.ini";
 
-    public bool HasCachedCatalog => store.IsSelected &&
-        File.Exists(Path.Combine(store.DirectoryPath, CacheName));
+    public bool HasCachedCatalog => store.IsSelected
+        && File.Exists(Path.Combine(store.DirectoryPath, CacheName));
 
     public static string Resource(string name)
     {

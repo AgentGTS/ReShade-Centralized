@@ -12,7 +12,6 @@ public static class LocalFiles
         using FileStream stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream));
     }
-
     public static string? Link(string path) => new FileInfo(path).LinkTarget;
 
     public static bool Exists(string path) => File.Exists(path) || Link(path) != null;

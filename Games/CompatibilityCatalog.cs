@@ -22,8 +22,8 @@ public sealed class CompatibilityCatalog
         var document = new IniDocument(text);
         foreach (string executable in document.Sections.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            if (Path.GetFileName(executable) != executable ||
-                !executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            if (Path.GetFileName(executable) != executable
+                || !executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -112,8 +112,8 @@ public sealed class CompatibilityCatalog
         }
 
         if (Path.IsPathRooted(target) || target.Split(['\\', '/']).Any(part =>
-            part.Length == 0 || part is "." or ".." || part.EndsWith('.') || part.EndsWith(' ') ||
-            part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0))
+            part.Length == 0 || part is "." or ".." || part.EndsWith('.') || part.EndsWith(' ')
+            || part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0))
         {
             throw new IOException("The compatibility install folder is unsafe: " + target);
         }
@@ -125,8 +125,8 @@ public sealed class CompatibilityCatalog
             proxy : GameFiles.Proxy(api);
 
     public CpuArchitecture Architecture(string executable, RenderApi api) =>
-        api != RenderApi.Vulkan &&
-        Applicable(executable) is { InstallTarget.Length: > 0, Architecture: { } architecture }
+        api != RenderApi.Vulkan
+        && Applicable(executable) is { InstallTarget.Length: > 0, Architecture: { } architecture }
             ? architecture : PortableExecutable.Architecture(executable);
 
     public void ApplyDefaults(IniDocument document, string executable)

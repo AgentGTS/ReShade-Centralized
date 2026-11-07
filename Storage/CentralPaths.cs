@@ -30,6 +30,7 @@ public sealed class CentralPaths
     public static CentralPaths At(string root)
     {
         root = Path.GetFullPath(root);
+
         return new()
         {
             Root = root

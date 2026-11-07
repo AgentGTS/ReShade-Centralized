@@ -11,6 +11,7 @@ internal static class CatalogCache
             {
                 throw new IOException("A catalog cache cannot be a symbolic link.");
             }
+
             return File.Exists(path) ? File.ReadAllText(path) : null;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -21,8 +22,13 @@ internal static class CatalogCache
     }
 
     public static async Task<T> RefreshAsync<T>(
-        Downloads downloads, string url, string path, Func<string, T> parse, Func<T> fallback,
-        IProgress<string>? progress, CancellationToken cancellationToken)
+        Downloads downloads,
+        string url,
+        string path,
+        Func<string, T> parse,
+        Func<T> fallback,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -30,8 +36,8 @@ internal static class CatalogCache
             return await DownloadAsync(downloads, url, path, parse, cancellationToken);
         }
         catch (Exception error) when (error is HttpRequestException or IOException or InvalidDataException or
-            UnauthorizedAccessException ||
-            (error is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+            UnauthorizedAccessException
+            || (error is TaskCanceledException && !cancellationToken.IsCancellationRequested))
         {
             progress?.Report("Catalog download unavailable; using cached or offline data. " + error.Message);
             return fallback();
@@ -39,7 +45,10 @@ internal static class CatalogCache
     }
 
     private static async Task<T> DownloadAsync<T>(
-        Downloads downloads, string url, string path, Func<string, T> parse,
+        Downloads downloads,
+        string url,
+        string path,
+        Func<string, T> parse,
         CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -47,6 +56,7 @@ internal static class CatalogCache
         string text = await downloads.TextAsync(url, timeout.Token);
         T catalog = parse(text);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+
         try
         {
             LocalFiles.CheckParents(path);
@@ -54,6 +64,7 @@ internal static class CatalogCache
             {
                 throw new IOException("A catalog cache cannot replace a symbolic link.");
             }
+
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             await File.WriteAllTextAsync(temporary, text, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -66,6 +77,7 @@ internal static class CatalogCache
                 File.Delete(temporary);
             }
         }
+
         return catalog;
     }
 }

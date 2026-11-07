@@ -46,6 +46,7 @@ public sealed partial class MainForm
         columns.Controls.Add(licenseText, 1, 0);
         page.Controls.Add(columns, 0, 0);
         page.SetRowSpan(columns, 3);
+
         creditSources.SelectedIndexChanged += (_, _) => ShowSelectedCredit();
         tabs.SelectedIndexChanged += (_, _) =>
         {
@@ -54,6 +55,7 @@ public sealed partial class MainForm
                 RefreshCredits();
             }
         };
+
         RefreshCredits();
     }
 
@@ -70,6 +72,7 @@ public sealed partial class MainForm
     {
         string? selected = (creditSources.SelectedItem as CreditSource)?.Name;
         creditSources.Items.Clear();
+
         creditSources.Items.Add(new CreditSource("ReShade Centralized", () =>
             "ReShade Centralized\r\nAgentGTS and original author OopyDoopy\r\n" +
             "https://github.com/AgentGTS/ReShade-Centralized\r\n" +
@@ -84,13 +87,16 @@ public sealed partial class MainForm
 
         foreach (InstalledPackage package in storage.State?.Packages ?? [])
         {
-            string[] notices = package.Files.Keys.Where(key => key.StartsWith("shaders/_notices/",
-                StringComparison.OrdinalIgnoreCase)).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            string[] notices = package.Files.Keys
+                .Where(key => key.StartsWith("shaders/_notices/", StringComparison.OrdinalIgnoreCase))
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             creditSources.Items.Add(new CreditSource(package.Name, () =>
                 package.Name + "\r\n" + package.Repository + "\r\n" + package.DownloadUrl +
                 (notices.Length == 0 ? "\r\n\r\nNo separate notices were retained for this installation. " +
                     "Reapply the package to collect its current notice documents; also consult its source repository." :
                     "\r\n\r\nSelect a document below to read its original text.")));
+
             foreach (string notice in notices)
             {
                 string relative = notice["shaders/".Length..];
@@ -100,8 +106,10 @@ public sealed partial class MainForm
                     notice["shaders/_notices/".Length..], () => ReadCreditFile(path)));
             }
         }
-        creditSources.SelectedIndex = Math.Max(0, creditSources.Items.Cast<CreditSource>()
-            .ToList().FindIndex(source => source.Name == selected));
+
+        creditSources.SelectedIndex = Math.Max(
+            0,
+            creditSources.Items.Cast<CreditSource>().ToList().FindIndex(source => source.Name == selected));
     }
 
     private static string ReadCreditFile(string path)
@@ -111,10 +119,12 @@ public sealed partial class MainForm
         {
             throw new IOException("The notice was replaced by a symbolic link: " + path);
         }
+
         if (new FileInfo(path).Length > 8 * 1024 * 1024)
         {
             return "This notice exceeds the display limit. Read the original file at:\r\n" + path;
         }
+
         return File.ReadAllText(path);
     }
 
@@ -129,6 +139,7 @@ public sealed partial class MainForm
         {
             licenseText.Text = "Cannot read this notice: " + error.Message;
         }
+
         licenseText.Select(0, 0);
     }
 }

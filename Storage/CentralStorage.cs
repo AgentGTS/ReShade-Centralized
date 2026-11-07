@@ -3,6 +3,7 @@ namespace ReShadeCentralized;
 public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : IDisposable
 {
     private readonly SemaphoreSlim operationGate = new(1, 1);
+
     public StateStore Store { get; } = store;
     public ManagerState? State { get; private set; }
     public event Action<string>? Warning;
@@ -57,6 +58,7 @@ public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : 
         {
             ReportWarning(repair);
         }
+
         return state;
     }
 
@@ -78,13 +80,15 @@ public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : 
         Func<ManagerState, FileTransaction, Task> action,
         CancellationToken cancellationToken)
     {
-        await RunAsync(async () =>
-        {
-            ManagerState updatedState = RequireState().Clone();
-            using FileTransaction transaction = BeginTransaction(description);
-            await action(updatedState, transaction);
-            Commit(updatedState, transaction, cancellationToken);
-        }, cancellationToken);
+        await RunAsync(
+            async () =>
+            {
+                ManagerState updatedState = RequireState().Clone();
+                using FileTransaction transaction = BeginTransaction(description);
+                await action(updatedState, transaction);
+                Commit(updatedState, transaction, cancellationToken);
+            },
+            cancellationToken);
     }
 
     public async Task InitializeAsync(string root, CancellationToken cancellationToken)

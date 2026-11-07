@@ -7,7 +7,13 @@ public sealed partial class MainForm
     private void BuildSettings()
     {
         TableLayoutPanel layout = CreatePage("Runtime & storage");
-        var viewport = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
+        var viewport = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            Margin = Padding.Empty
+        };
+
         var sections = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
@@ -44,17 +50,20 @@ public sealed partial class MainForm
         vulkanStatus.SizeChanged += (_, _) => vulkanStatusLabel.MaximumSize =
             new Size(Math.Max(1, vulkanStatus.ClientSize.Width - LogicalToDeviceUnits(24)), 0);
         AddSectionRow(vulkan, vulkanStatus);
+
         vulkanBuildSelector.Items.AddRange(Enum.GetValues<RuntimeBuild>().Cast<object>().ToArray());
         vulkanBuildSelector.SelectedItem = RuntimeBuild.Standard;
         vulkanBuildSelector.AccessibleName = "Global Vulkan build";
+
         FlowLayoutPanel vulkanCommands = CreateCommandBar();
         vulkanBuildSelector.Margin = new Padding(0, 0, 8, 8);
         Button applyVulkan = CreateActionButton("Apply / repair", OnApplyRepairVulkanAsync);
         vulkanCommands.Controls.Add(vulkanBuildSelector);
         vulkanCommands.Controls.Add(applyVulkan);
-        vulkanCommands.Controls.Add(CreateActionButton("Remove app-owned layers...", OnRemoveVulkanLayersAsync,
-            isAvailable: () => storage.State is { OwnedVulkanRegistrations.Count: > 0 } state &&
-                !state.Games.Any(game => game.Api == RenderApi.Vulkan)));
+        vulkanCommands.Controls.Add(CreateActionButton(
+            "Remove app-owned layers...", OnRemoveVulkanLayersAsync,
+            isAvailable: () => storage.State is { OwnedVulkanRegistrations.Count: > 0 } state
+                && !state.Games.Any(game => game.Api == RenderApi.Vulkan)));
         vulkanCommands.Layout += (_, _) =>
         {
             int heightDifference = applyVulkan.Height - vulkanBuildSelector.Height;
@@ -64,10 +73,12 @@ public sealed partial class MainForm
             }
         };
         AddSectionRow(vulkan, vulkanCommands);
+
         TableLayoutPanel externalGames = CreateSection(sections, "Vulkan games");
         vulkanGamesList.Dock = DockStyle.Fill;
         vulkanGamesList.AccessibleName = "Existing Vulkan consumers";
         AddSectionRow(externalGames, vulkanGamesList);
+
         FlowLayoutPanel consumerCommands = CreateCommandBar();
         consumerCommands.Controls.Add(CreateActionButton("Manage game...", OnAdoptSelectedGameAsync,
             isAvailable: () => vulkanGamesList.SelectedItem is VulkanGameEntry { IsManaged: false }));
@@ -79,19 +90,22 @@ public sealed partial class MainForm
         FlowLayoutPanel storageCommands = CreateCommandBar();
         storageCommands.Controls.Add(CreateActionButton("Open central folder", OnOpenCentralFolderAsync));
         AddSectionRow(storageSection, storageCommands);
-
     }
 
     private async Task ImportRuntimeAsync()
     {
-        string? standard = DialogLayout.PickFile(this, "ReShade installer|*.exe",
+        string? standard = DialogLayout.PickFile(
+            this,
+            "ReShade installer|*.exe",
             "Select the standard official ReShade installer");
         if (standard == null)
         {
             return;
         }
 
-        string? addon = DialogLayout.PickFile(this, "ReShade installer|*.exe",
+        string? addon = DialogLayout.PickFile(
+            this,
+            "ReShade installer|*.exe",
             $"Select the official {DisplayNames.For(RuntimeBuild.FullAddon)} ReShade installer");
         if (addon != null)
         {
@@ -104,23 +118,26 @@ public sealed partial class MainForm
     private void RefreshVulkanStatus(VulkanInspection? prepared = null)
     {
         VulkanInspection inspection = prepared ?? vulkan.Inspect(storage.State);
-        bool pendingBuild = storage.State != null && vulkanBuildSelector.SelectedItem is RuntimeBuild selectedBuild &&
-            selectedBuild != storage.State.VulkanBuild;
+        bool pendingBuild = storage.State != null && vulkanBuildSelector.SelectedItem is RuntimeBuild selectedBuild
+            && selectedBuild != storage.State.VulkanBuild;
         bool applied = inspection.IsApplied && !pendingBuild;
+
         vulkanStatusLabel.Text = pendingBuild ? "Build choice applies to app-owned layers. Choose Apply / repair." :
             inspection.Message;
         vulkanStatusLabel.ForeColor = applied || SystemInformation.HighContrast
             ? DarkTheme.Muted : Color.FromArgb(242, 199, 91);
         vulkanWarningIcon.Visible = !applied;
-        vulkanGamesList.SetEntries(inspection.Consumers.Select(executable => new VulkanGameEntry(executable,
-            storage.State?.Games.Any(game => game.Api == RenderApi.Vulkan && game.Executable != null &&
-                LocalFiles.Same(game.Executable, executable)) == true)));
+        vulkanGamesList.SetEntries(inspection.Consumers.Select(executable => new VulkanGameEntry(
+            executable,
+            storage.State?.Games.Any(game => game.Api == RenderApi.Vulkan && game.Executable != null
+                && LocalFiles.Same(game.Executable, executable)) == true)));
 
         vulkanGamesList.Parent!.Visible = vulkanGamesList.Items.Count > 0;
         if (inspection.Error != null && inspection.Error != lastVulkanInspectionError)
         {
             WriteLog("Vulkan registration check: " + inspection.Error);
         }
+
         lastVulkanInspectionError = inspection.Error;
         UpdateActionAvailability();
     }
@@ -141,12 +158,15 @@ public sealed partial class MainForm
 
     private async Task OnRemoveVulkanLayersAsync()
     {
-        if (MessageBox.Show(this,
+        if (MessageBox.Show(
+            this,
             "Remove this app's shared Vulkan layer registrations?\n\n" +
             "Games outside the app that share this layer may lose ReShade. " +
             "Removal is blocked if games are still recorded as using it. " +
             "Other installers' registrations and all runtime files will be kept.",
-            "Remove app-owned Vulkan layers", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+            "Remove app-owned Vulkan layers",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2) != DialogResult.Yes)
         {
             return;
@@ -156,6 +176,7 @@ public sealed partial class MainForm
         {
             VulkanRemovalResult result = await vulkan.RemoveVulkanSupportAsync(storage, cancellationToken);
             WriteLog($"Removed {result.Removed.Count} app-owned Vulkan layer registrations. Runtime files were kept.");
+
             foreach (string preserved in result.Preserved)
             {
                 WriteLog("Kept: " + preserved);
@@ -167,7 +188,8 @@ public sealed partial class MainForm
     {
         return RunOperationAsync(
             "Applying global Vulkan build",
-            cancellationToken => vulkan.SetVulkanBuildAsync(storage,
+            cancellationToken => vulkan.SetVulkanBuildAsync(
+                storage,
                 (RuntimeBuild)vulkanBuildSelector.SelectedItem!,
                 cancellationToken));
     }
@@ -195,5 +217,4 @@ public sealed partial class MainForm
         OpenFolder(storage.RequireState().Paths.Root);
         return Task.CompletedTask;
     }
-
 }

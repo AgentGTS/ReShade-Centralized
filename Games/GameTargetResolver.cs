@@ -50,15 +50,15 @@ public static class GameTargetResolver
         }
 
         string bridge = Path.Combine(Path.GetDirectoryName(executable)!, ".trex", "NvRemixBridge.exe");
-        if (PortableExecutable.GetValidatedGamePath(bridge) != null &&
-            PortableExecutable.Architecture(bridge) == CpuArchitecture.X64)
+        if (PortableExecutable.GetValidatedGamePath(bridge) != null
+            && PortableExecutable.Architecture(bridge) == CpuArchitecture.X64)
         {
             return new(bridge, "RTX Remix bridge", true);
         }
-        bool isRemix = Path.GetFileName(executable).Equals("NvRemixBridge.exe", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(Path.GetFileName(Path.GetDirectoryName(executable)), ".trex",
-                StringComparison.OrdinalIgnoreCase) &&
-            PortableExecutable.Architecture(executable) == CpuArchitecture.X64;
+        bool isRemix = Path.GetFileName(executable).Equals("NvRemixBridge.exe", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Path.GetFileName(Path.GetDirectoryName(executable)), ".trex",
+                StringComparison.OrdinalIgnoreCase)
+            && PortableExecutable.Architecture(executable) == CpuArchitecture.X64;
         return new(executable, reason, isRemix);
     }
 
@@ -76,10 +76,10 @@ public static class GameTargetResolver
                 }
                 using FileStream stream = File.OpenRead(path);
                 using var image = new PEReader(stream);
-                if (image.PEHeaders.PEHeader != null &&
-                    image.PEHeaders.CoffHeader.Characteristics.HasFlag(Characteristics.Dll) &&
-                    PortableExecutable.Architecture(path) == PortableExecutable.Architecture(executable) &&
-                    FileVersionInfo.GetVersionInfo(path).ProductName == "DXVK")
+                if (image.PEHeaders.PEHeader != null
+                    && image.PEHeaders.CoffHeader.Characteristics.HasFlag(Characteristics.Dll)
+                    && PortableExecutable.Architecture(path) == PortableExecutable.Architecture(executable)
+                    && FileVersionInfo.GetVersionInfo(path).ProductName == "DXVK")
                 {
                     return true;
                 }

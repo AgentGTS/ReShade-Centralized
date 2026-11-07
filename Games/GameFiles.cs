@@ -17,8 +17,13 @@ public static class GameFiles
         InstallationDirectories(executable, api).Select(directory => Path.Combine(directory, "ReShade.ini")).ToArray();
 
     internal static string[] InstallationDirectories(string executable, RenderApi? api) =>
-        new[] { Path.GetDirectoryName(executable)!, CompatibilityCatalog.Default.InstallationDirectory(executable, api) }
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        new[]
+        {
+            Path.GetDirectoryName(executable)!,
+            CompatibilityCatalog.Default.InstallationDirectory(executable, api)
+        }
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 
     internal static IEnumerable<string> InspectionPaths(string executable, RenderApi? api) =>
         InstallationDirectories(executable, api).SelectMany(directory =>
@@ -30,7 +35,8 @@ public static class GameFiles
         string rootConfig = Path.Combine(Path.GetDirectoryName(executable)!, "ReShade.ini");
         if (HasFileTarget(rootConfig))
         {
-            string? basePath = IniDocument.Split(IniDocument.Read(rootConfig).Get("INSTALL", "BasePath")).FirstOrDefault();
+            string? basePath = IniDocument.Split(IniDocument.Read(rootConfig).Get("INSTALL", "BasePath"))
+                .FirstOrDefault();
             if (!string.IsNullOrWhiteSpace(basePath))
             {
                 string candidate = Path.GetFullPath(basePath, directory);
@@ -40,6 +46,7 @@ public static class GameFiles
                 }
             }
         }
+
         string config = Path.Combine(directory, "ReShade.ini");
         return HasFileTarget(config) ? config : HasFileTarget(rootConfig) ? rootConfig : null;
     }
@@ -54,10 +61,10 @@ public static class GameFiles
     public static bool IsOwnedLink(OwnedLink link)
     {
         string? target = LocalFiles.Link(link.Path);
-        return target != null &&
-            LocalFiles.Same(
-            Path.GetFullPath(Path.Combine(Path.GetDirectoryName(link.Path)!, target)),
-            link.Target);
+        return target != null
+            && LocalFiles.Same(
+                Path.GetFullPath(Path.Combine(Path.GetDirectoryName(link.Path)!, target)),
+                link.Target);
     }
 
     internal static bool IsReShadeHook(string path)
@@ -69,8 +76,8 @@ public static class GameFiles
 
         string? target = LocalFiles.Link(path);
         string name = Path.GetFileName(target) ?? "";
-        return target != null && (name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase) ||
-            name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
+        return target != null && (name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
     }
 
     internal static bool HasFileTarget(string path)
@@ -85,7 +92,7 @@ public static class GameFiles
         return target != null && File.Exists(target.FullName) && !Directory.Exists(target.FullName);
     }
 
-    internal static bool CanReplaceReShadeLink(string path) => LocalFiles.Link(path) != null &&
-        (Path.GetFileName(path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase) || IsReShadeHook(path));
+    internal static bool CanReplaceReShadeLink(string path) => LocalFiles.Link(path) != null
+        && (Path.GetFileName(path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase) || IsReShadeHook(path));
 
 }

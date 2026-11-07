@@ -40,6 +40,7 @@ internal sealed class StorageLoadingIndicator : Control
         {
             return;
         }
+
         progress = value;
         AccessibleDescription = PhaseText();
         Invalidate();
@@ -76,6 +77,7 @@ internal sealed class StorageLoadingIndicator : Control
         float scale = DeviceDpi / 96f;
         float center = Width / 2f;
         float top = (Height / 2f) - (70 * scale);
+
         if (busy)
         {
             var ring = new RectangleF(center - (20 * scale), top, 40 * scale, 40 * scale);
@@ -92,11 +94,14 @@ internal sealed class StorageLoadingIndicator : Control
         }
 
         var title = new Rectangle(12, (int)(top + (56 * scale)), Width - 24, (int)(32 * scale));
-        TextRenderer.DrawText(e.Graphics, Text, DarkTheme.HeadingFont, title, DarkTheme.Text,
+        TextRenderer.DrawText(
+            e.Graphics, Text, DarkTheme.HeadingFont, title, DarkTheme.Text,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         var phase = new Rectangle(12, title.Bottom + (int)(6 * scale), Width - 24, (int)(26 * scale));
-        TextRenderer.DrawText(e.Graphics, PhaseText(), Font, phase, DarkTheme.Muted,
+        TextRenderer.DrawText(
+            e.Graphics, PhaseText(), Font, phase, DarkTheme.Muted,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+
         if (!busy)
         {
             return;
@@ -107,6 +112,7 @@ internal sealed class StorageLoadingIndicator : Control
         using var background = new SolidBrush(DarkTheme.Border);
         using var fill = new SolidBrush(DarkTheme.Accent);
         e.Graphics.FillRectangle(background, bar);
+
         if (progress.Total > 0)
         {
             float fraction = Math.Clamp((float)progress.Completed / progress.Total, 0, 1);
@@ -128,6 +134,7 @@ internal sealed class StorageLoadingIndicator : Control
         {
             animation.Dispose();
         }
+
         base.Dispose(disposing);
     }
 }

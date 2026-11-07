@@ -4,27 +4,39 @@ internal sealed class ShutdownDeadline(int exitCode = 2) : IDisposable
 {
     private readonly object gate = new();
     private System.Threading.Timer? timer;
-    private bool requested;
-    private bool disposed;
-    private bool forced;
+    private ShutdownState state;
+
+    private enum ShutdownState
+    {
+        Idle,
+        Requested,
+        Forced,
+        Disposed
+    }
 
     internal void Request()
     {
         bool force;
         lock (gate)
         {
-            if (disposed)
+            if (state is ShutdownState.Disposed or ShutdownState.Forced)
             {
                 return;
             }
-            force = requested;
-            if (!requested)
+
+            force = state == ShutdownState.Requested;
+            if (!force)
             {
-                requested = true;
+                state = ShutdownState.Requested;
                 // A UI timer could never fire if the window thread stalls during shutdown.
-                timer = new System.Threading.Timer(_ => ForceExit(), null, TimeSpan.FromSeconds(3), Timeout.InfiniteTimeSpan);
+                timer = new System.Threading.Timer(
+                    _ => ForceExit(),
+                    null,
+                    TimeSpan.FromSeconds(3),
+                    Timeout.InfiniteTimeSpan);
             }
         }
+
         if (force)
         {
             ForceExit();
@@ -35,11 +47,12 @@ internal sealed class ShutdownDeadline(int exitCode = 2) : IDisposable
     {
         lock (gate)
         {
-            if (disposed || forced)
+            if (state is ShutdownState.Disposed or ShutdownState.Forced)
             {
                 return;
             }
-            forced = true;
+
+            state = ShutdownState.Forced;
             ProcessTermination.Exit(exitCode);
         }
     }
@@ -48,7 +61,7 @@ internal sealed class ShutdownDeadline(int exitCode = 2) : IDisposable
     {
         lock (gate)
         {
-            disposed = true;
+            state = ShutdownState.Disposed;
             timer?.Dispose();
             timer = null;
         }

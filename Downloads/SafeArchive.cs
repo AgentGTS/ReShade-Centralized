@@ -5,23 +5,32 @@ namespace ReShadeCentralized;
 
 public static class SafeArchive
 {
-    public static void Extract(string archivePath, string destination, CancellationToken cancellationToken = default)
+    public static void Extract(
+        string archivePath,
+        string destination,
+        CancellationToken cancellationToken = default)
     {
         using ZipArchive archive = ZipFile.OpenRead(archivePath);
         Extract(archive, destination, cancellationToken);
     }
 
-    public static void Extract(ZipArchive archive, string destination, CancellationToken cancellationToken = default)
+    public static void Extract(
+        ZipArchive archive,
+        string destination,
+        CancellationToken cancellationToken = default)
     {
         long expanded = 0;
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         // Validate the entire archive before writing anything.
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
             string name = entry.FullName.Replace('\\', '/');
-            if (name.Split('/').Any(value => value == ".." || value.Contains(':') || value.TrimEnd(' ', '.') != value ||
-                Regex.IsMatch(value, @"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)", RegexOptions.IgnoreCase)))
+            if (name.Split('/').Any(value => value == ".."
+                || value.Contains(':')
+                || value.TrimEnd(' ', '.') != value
+                || Regex.IsMatch(value, @"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)", RegexOptions.IgnoreCase)))
             {
                 throw new InvalidDataException("Unsafe archive entry: " + name);
             }
@@ -83,8 +92,8 @@ public static class SafeArchive
         byte[] block = new byte[512];
         while (input.Read(block) == block.Length)
         {
-            if (block[0] != 0x50 || block[1] != 0x4B || block[2] != 3 || block[3] != 4 ||
-                !block.Skip(4).Take(26).Any(item => item != 0))
+            if (block[0] != 0x50 || block[1] != 0x4B || block[2] != 3 || block[3] != 4
+                || !block.Skip(4).Take(26).Any(item => item != 0))
             {
                 continue;
             }
@@ -94,6 +103,7 @@ public static class SafeArchive
             input.CopyTo(payload);
             payload.Position = 0;
             using var zip = new ZipArchive(payload, ZipArchiveMode.Read);
+
             foreach (string file in RuntimeService.PayloadFiles)
             {
                 ZipArchiveEntry[] entries = zip.Entries.Where(item => item.FullName == file).ToArray();

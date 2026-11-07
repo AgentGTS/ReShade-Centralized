@@ -7,8 +7,10 @@ public static class ShaderDependencies
         IReadOnlyList<ShaderPackage> catalog,
         Action<ShaderPackage, string>? dependencyUnavailable = null)
     {
-        var result = selected.Concat(catalog.Where(package => package.Required)).DistinctBy(package => package.Id)
+        var result = selected.Concat(catalog.Where(package => package.Required))
+            .DistinctBy(package => package.Id)
             .ToList();
+
         // The upstream catalog describes this dependency but has no structured dependency field.
         ShaderPackage? dependent = result.SingleOrDefault(package =>
             ShaderCatalog.CanonicalRepository(package.Repository).EndsWith("/yplebedev/bfbfx"));
@@ -37,8 +39,8 @@ public static class ShaderDependencies
         return result.OrderByDescending(package => package.Required)
             .ThenBy(package => package.Id == dependent?.Id)
             .ThenBy(
-            package => package.Id,
-            StringComparer.Ordinal)
+                package => package.Id,
+                StringComparer.Ordinal)
             .ToList();
     }
 
@@ -47,9 +49,9 @@ public static class ShaderDependencies
         IReadOnlyList<ShaderPackage> selection)
     {
         bool needsFramework = ShaderCatalog.CanonicalRepository(package.Repository).EndsWith("/yplebedev/bfbfx");
-        return selection.Where(candidate => candidate.Id != package.Id &&
-            ((!package.Required && candidate.Required) ||
-            (needsFramework && ShaderCatalog.CanonicalRepository(candidate.Repository).EndsWith("/zenteon/zenteonfx"))));
+        return selection.Where(candidate => candidate.Id != package.Id
+            && ((!package.Required && candidate.Required)
+                || (needsFramework && ShaderCatalog.CanonicalRepository(candidate.Repository)
+                    .EndsWith("/zenteon/zenteonfx"))));
     }
-
 }

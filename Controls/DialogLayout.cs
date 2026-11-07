@@ -10,6 +10,7 @@ internal static class DialogLayout
         form.FormBorderStyle = FormBorderStyle.FixedDialog;
         form.AutoScaleMode = AutoScaleMode.Dpi;
         form.Font = DarkTheme.BodyFont;
+
         var table = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -17,6 +18,7 @@ internal static class DialogLayout
             Padding = new Padding(24),
             AutoSize = true
         };
+
         table.ColumnStyles.Add(new(SizeType.Absolute, 145));
         table.ColumnStyles.Add(new(SizeType.Percent, 100));
         form.Controls.Add(table);
@@ -34,6 +36,7 @@ internal static class DialogLayout
         table.RowStyles.Add(new(SizeType.AutoSize));
         Padding rowMargin = margin ?? new Padding(0, 4, 0, 9);
         Label? fieldLabel = null;
+
         if (label.Length > 0)
         {
             fieldLabel = new Label
@@ -50,6 +53,7 @@ internal static class DialogLayout
         control.Dock = DockStyle.Fill;
         control.Margin = rowMargin;
         table.Controls.Add(control, fieldLabel == null && fullWidth ? 0 : 1, row);
+
         if (fieldLabel == null && fullWidth)
         {
             table.SetColumnSpan(control, 2);
@@ -70,11 +74,13 @@ internal static class DialogLayout
             Height = box.PreferredHeight,
             Margin = Padding.Empty
         };
+
         panel.ColumnStyles.Add(new(SizeType.Percent, 100));
         panel.ColumnStyles.Add(new(SizeType.Absolute, 42));
         box.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         box.Margin = new Padding(0, 0, 8, 0);
         panel.Controls.Add(box);
+
         var button = new FlatButton("...")
         {
             Dock = DockStyle.Fill,
@@ -86,11 +92,13 @@ internal static class DialogLayout
             AccessibleName = file ? "Browse for a file" : "Browse for a folder"
         };
         panel.Controls.Add(button);
+
         box.SizeChanged += (_, _) =>
         {
             button.Height = box.Height;
             panel.Height = box.Height;
         };
+
         button.Click += async (_, _) =>
         {
             if (file)
@@ -115,12 +123,14 @@ internal static class DialogLayout
                     UseDescriptionForTitle = true,
                     Description = "Select central storage"
                 };
+
                 if (dialog.ShowDialog(box.FindForm()) == DialogResult.OK)
                 {
                     box.Text = dialog.SelectedPath;
                 }
             }
         };
+
         return panel;
     }
 
@@ -141,14 +151,17 @@ internal static class DialogLayout
             Dock = DockStyle.Fill,
             Margin = new Padding(0, 16, 0, 0)
         };
+
         var ok = new FlatButton(accept, primary: true)
         {
             DialogResult = DialogResult.OK
         };
+
         var cancel = new FlatButton("Cancel")
         {
             DialogResult = DialogResult.Cancel
         };
+
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
         Row(table, "", buttons);

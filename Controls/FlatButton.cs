@@ -17,9 +17,13 @@ internal sealed class FlatButton : Button
         Margin = new Padding(0, 0, 8, 8);
         FlatStyle = FlatStyle.Flat;
         UseVisualStyleBackColor = false;
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
-            | ControlStyles.OptimizedDoubleBuffer, true);
+        SetStyle(
+            ControlStyles.UserPaint
+            | ControlStyles.AllPaintingInWmPaint
+            | ControlStyles.OptimizedDoubleBuffer,
+            true);
         ApplyTheme();
+
         MouseEnter += (_, _) => SetInteraction(hovered: true, pressed);
         MouseLeave += (_, _) => SetInteraction(hovered: false, pressed: false);
         MouseDown += (_, e) => SetInteraction(hovered, pressed: e.Button == MouseButtons.Left);
@@ -45,6 +49,7 @@ internal sealed class FlatButton : Button
         FlatAppearance.BorderColor = DarkTheme.Border;
         FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(138, 235, 211) : DarkTheme.Hover;
         FlatAppearance.MouseDownBackColor = primary ? DarkTheme.Accent : DarkTheme.Selection;
+
         if (SystemInformation.HighContrast)
         {
             FlatAppearance.MouseOverBackColor = BackColor;
@@ -68,11 +73,13 @@ internal sealed class FlatButton : Button
         Color foreground = Enabled ? ForeColor : disabledForeground;
         using var fill = new SolidBrush(background);
         e.Graphics.FillRectangle(fill, ClientRectangle);
+
         if (FlatAppearance.BorderSize > 0 || (Focused && ShowFocusCues))
         {
             using var border = new Pen(Focused && ShowFocusCues ? DarkTheme.Accent : DarkTheme.Border);
             e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         }
+
         TextFormatFlags flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
             | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
         if (!ShowKeyboardCues)
@@ -81,10 +88,14 @@ internal sealed class FlatButton : Button
         }
 
         TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, foreground, flags);
+
         if (Focused && ShowFocusCues)
         {
-            ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -4, -4),
-                foreground, background);
+            ControlPaint.DrawFocusRectangle(
+                e.Graphics,
+                Rectangle.Inflate(ClientRectangle, -4, -4),
+                foreground,
+                background);
         }
     }
 

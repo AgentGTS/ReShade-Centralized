@@ -6,11 +6,16 @@ internal sealed class NavigationTabs : TabControl
 
     public NavigationTabs()
     {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
-            | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        SetStyle(
+            ControlStyles.UserPaint
+            | ControlStyles.AllPaintingInWmPaint
+            | ControlStyles.OptimizedDoubleBuffer
+            | ControlStyles.ResizeRedraw,
+            true);
         SizeMode = TabSizeMode.Fixed;
         ItemSize = new Size(160, 44);
         Padding = new Point(12, 6);
+
         SelectedIndexChanged += (_, _) => Invalidate();
         EnabledChanged += (_, _) => Invalidate();
         GotFocus += (_, _) => Invalidate();
@@ -33,24 +38,36 @@ internal sealed class NavigationTabs : TabControl
         {
             Rectangle bounds = GetTabRect(index);
             bool selected = SelectedIndex == index;
-            Color background = selected ? DarkTheme.Surface
+            Color background = selected
+                ? DarkTheme.Surface
                 : hoveredIndex == index ? DarkTheme.Raised : DarkTheme.Background;
             using var fill = new SolidBrush(background);
             e.Graphics.FillRectangle(fill, bounds);
             Color foreground = selected ? DarkTheme.Text : DarkTheme.Muted;
+
             if (!Enabled)
             {
                 foreground = SystemColors.GrayText;
             }
 
-            TextRenderer.DrawText(e.Graphics, TabPages[index].Text, Font, bounds, foreground,
+            TextRenderer.DrawText(
+                e.Graphics,
+                TabPages[index].Text,
+                Font,
+                bounds,
+                foreground,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             if (selected)
             {
                 using var accent = new SolidBrush(DarkTheme.Accent);
                 int thickness = LogicalToDeviceUnits(3);
-                e.Graphics.FillRectangle(accent, bounds.Left + 12, bounds.Bottom - thickness,
-                    bounds.Width - 24, thickness);
+                e.Graphics.FillRectangle(
+                    accent,
+                    bounds.Left + 12,
+                    bounds.Bottom - thickness,
+                    bounds.Width - 24,
+                    thickness);
+
                 if (Focused && ShowFocusCues)
                 {
                     Rectangle focus = Rectangle.Inflate(bounds, -6, -6);
@@ -86,5 +103,4 @@ internal sealed class NavigationTabs : TabControl
         hoveredIndex = -1;
         Invalidate();
     }
-
 }

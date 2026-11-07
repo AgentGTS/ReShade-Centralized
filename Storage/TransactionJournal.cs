@@ -8,6 +8,10 @@ public sealed class FileSnapshot
     public string? Hash { get; set; }
 
     public string? LinkTarget { get; set; }
+
+    public bool RestoreOnlyIfMissing { get; set; }
+
+    public string? ExpectedModifiedHash { get; set; }
 }
 
 public sealed class TransactionJournal

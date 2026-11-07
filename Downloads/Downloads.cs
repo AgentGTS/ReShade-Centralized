@@ -21,8 +21,9 @@ public sealed class Downloads : IDisposable
             uri,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
-        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden &&
-            uri.Host.Equals("reshade.me", StringComparison.OrdinalIgnoreCase))
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden
+            && uri.Host.Equals("reshade.me", StringComparison.OrdinalIgnoreCase))
         {
             response.Dispose();
             response = await client.GetAsync(
@@ -43,8 +44,9 @@ public sealed class Downloads : IDisposable
 
     public static Uri Url(string url)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || uri.Scheme != "https" ||
-            !string.IsNullOrEmpty(uri.UserInfo))
+        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+            || uri.Scheme != "https"
+            || !string.IsNullOrEmpty(uri.UserInfo))
         {
             throw new InvalidDataException("Only absolute HTTPS download URLs are supported.");
         }
@@ -65,6 +67,7 @@ public sealed class Downloads : IDisposable
         byte[] buffer = new byte[81920];
         long received = 0;
         var clock = Stopwatch.StartNew();
+
         while (true)
         {
             int count = await source.ReadAsync(buffer, cancellationToken);

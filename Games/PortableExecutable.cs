@@ -10,10 +10,13 @@ public static partial class PortableExecutable
         try
         {
             path = path.Trim();
-            if (path.Length < 4 || !char.IsAsciiLetter(path[0]) || path[1] != ':' ||
-                (path[2] != '\\' && path[2] != '/') || path.AsSpan(2).Contains(':') ||
-                path.IndexOfAny(['*', '?', '"', '<', '>', '|', '\0']) >= 0 ||
-                !Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+            if (path.Length < 4
+                || !char.IsAsciiLetter(path[0])
+                || path[1] != ':'
+                || (path[2] != '\\' && path[2] != '/')
+                || path.AsSpan(2).Contains(':')
+                || path.IndexOfAny(['*', '?', '"', '<', '>', '|', '\0']) >= 0
+                || !Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase))
             {
                 return null;
             }
@@ -56,12 +59,18 @@ public static partial class PortableExecutable
                 return null;
             }
 
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
             using var reader = new PEReader(stream);
             PEHeaders headers = reader.PEHeaders;
             Characteristics characteristics = headers.CoffHeader.Characteristics;
-            if (headers.PEHeader == null || headers.CoffHeader.Machine is not (Machine.I386 or Machine.Amd64) ||
-                !characteristics.HasFlag(Characteristics.ExecutableImage) || characteristics.HasFlag(Characteristics.Dll))
+            if (headers.PEHeader == null
+                || headers.CoffHeader.Machine is not (Machine.I386 or Machine.Amd64)
+                || !characteristics.HasFlag(Characteristics.ExecutableImage)
+                || characteristics.HasFlag(Characteristics.Dll))
             {
                 return null;
             }
@@ -93,6 +102,6 @@ public static partial class PortableExecutable
     }
 
     public static bool IsReShade(string path) =>
-        File.Exists(path) &&
-        FileVersionInfo.GetVersionInfo(path).ProductName == "ReShade";
+        File.Exists(path)
+        && FileVersionInfo.GetVersionInfo(path).ProductName == "ReShade";
 }

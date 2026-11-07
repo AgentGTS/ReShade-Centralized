@@ -1,6 +1,7 @@
 using System.Text;
 
 namespace ReShadeCentralized;
+
 // Keep comments and unknown keys. ReShade uses doubled commas inside list elements.
 public sealed class IniDocument
 {
@@ -17,8 +18,8 @@ public sealed class IniDocument
         return line.StartsWith('[') && line.EndsWith(']');
     }
 
-    public IEnumerable<string> Sections =>
-        lines.Where(value => Section(value, out _))
+    public IEnumerable<string> Sections => lines
+        .Where(value => Section(value, out _))
         .Select(value => value.Trim()[1..^1]);
 
     public string? Get(string section, string key)
@@ -33,8 +34,9 @@ public sealed class IniDocument
             }
 
             int equals = line.IndexOf('=');
-            if (equals >= 0 && current.Equals(section, StringComparison.OrdinalIgnoreCase) &&
-                line[..equals].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
+            if (equals >= 0
+                && current.Equals(section, StringComparison.OrdinalIgnoreCase)
+                && line[..equals].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
             {
                 return line[(equals + 1)..].Trim();
             }
@@ -109,8 +111,8 @@ public sealed class IniDocument
 
     public static string Join(IEnumerable<string> values) =>
         string.Join(
-        ',',
-        values.Select(value => value.Replace(",", ",,")));
+            ',',
+            values.Select(value => value.Replace(",", ",,")));
 
     public static string[] Split(string? value)
     {

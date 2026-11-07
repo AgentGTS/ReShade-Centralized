@@ -33,8 +33,14 @@ internal sealed class DarkComboBox : ComboBox
         e.Graphics.FillRectangle(fill, e.Bounds);
         string? text = e.Index >= 0 ? GetItemText(Items[e.Index]) : Text;
         Rectangle textBounds = Rectangle.Inflate(e.Bounds, -6, 0);
-        TextRenderer.DrawText(e.Graphics, text, e.Font, textBounds, foreground,
+        TextRenderer.DrawText(
+            e.Graphics,
+            text,
+            e.Font,
+            textBounds,
+            foreground,
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+
         if ((e.State & DrawItemState.Focus) != 0)
         {
             ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(e.Bounds, -1, -1), foreground, background);

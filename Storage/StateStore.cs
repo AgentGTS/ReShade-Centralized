@@ -5,6 +5,7 @@ namespace ReShadeCentralized;
 public sealed class StateStore
 {
     public const int CurrentSchemaVersion = 4;
+
     public static string DefaultDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ReShade Centralized");
 
@@ -30,10 +31,13 @@ public sealed class StateStore
     public static StateStore ForApplication(string directory) => new(directory, applicationFolder: true);
 
     public bool IsSelected => selectedDirectory != null;
+
     public string DirectoryPath => selectedDirectory ??
         throw new InvalidOperationException("Choose a central storage folder first.");
+
     public string? PointerPath => applicationDirectory == null ? null :
         Path.Combine(applicationDirectory, "CentralStorage.txt");
+
     public string StatePath => Path.Combine(DirectoryPath, "ReShadeCentralized.json");
     public string Recovery => Path.Combine(DirectoryPath, "Recovery-v2");
     public string Staging => Path.Combine(DirectoryPath, "Staging");
@@ -46,12 +50,14 @@ public sealed class StateStore
         }
 
         selectedDirectory = null;
+
         if (!File.Exists(PointerPath))
         {
             return;
         }
 
         SelectDirectory(File.ReadAllText(PointerPath).Trim());
+
         if (!Directory.Exists(DirectoryPath))
         {
             throw new IOException("Saved central storage is unavailable: " +
@@ -73,9 +79,12 @@ public sealed class StateStore
         }
 
         string path = Path.GetFullPath(directory);
-        if (applicationDirectory != null && (LocalFiles.Same(path, applicationDirectory) ||
-            path.StartsWith(applicationDirectory.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
-                StringComparison.OrdinalIgnoreCase)))
+
+        if (applicationDirectory != null
+            && (LocalFiles.Same(path, applicationDirectory)
+                || path.StartsWith(
+                    applicationDirectory.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidDataException("Choose central storage outside the app folder so deleting the app " +
                 "keeps game settings and ReShade files.");
@@ -93,6 +102,7 @@ public sealed class StateStore
         }
 
         LocalFiles.CheckParents(PointerPath);
+
         if (LocalFiles.Link(PointerPath) != null || LocalFiles.Link(PointerPath + ".tmp") != null)
         {
             throw new IOException("The central storage pointer must not be a link: " + PointerPath);
@@ -108,6 +118,7 @@ public sealed class StateStore
     internal ManagerState? Load(out IReadOnlyList<string> repairs)
     {
         repairs = [];
+
         try
         {
             return LoadState(out repairs);
@@ -124,6 +135,7 @@ public sealed class StateStore
     private ManagerState? LoadState(out IReadOnlyList<string> repairs)
     {
         repairs = [];
+
         if (!IsSelected || !LocalFiles.Exists(StatePath))
         {
             return null;
@@ -135,8 +147,9 @@ public sealed class StateStore
         }
 
         ManagerState state = StateMigration.Read(File.ReadAllText(StatePath), DirectoryPath, out repairs);
-        if (state.VulkanLayerDirectory != null &&
-            !LocalFiles.Same(state.VulkanLayerDirectory, Path.Combine(DirectoryPath, "Vulkan")))
+
+        if (state.VulkanLayerDirectory != null
+            && !LocalFiles.Same(state.VulkanLayerDirectory, Path.Combine(DirectoryPath, "Vulkan")))
         {
             throw new InvalidDataException("This beta requires a fresh setup for Vulkan files stored outside " +
                 "central storage. Unregister games with the previous build before setting up again.");
@@ -149,6 +162,6 @@ public sealed class StateStore
         ManagerState state,
         FileTransaction transaction) =>
         transaction.WriteText(
-        StatePath,
-        JsonSerializer.Serialize(state, ManagerState.Json));
+            StatePath,
+            JsonSerializer.Serialize(state, ManagerState.Json));
 }

@@ -13,14 +13,14 @@ public sealed class ManagerState
     public List<GameProfile> Games { get; set; } = [];
     public List<InstalledPackage> Packages { get; set; } = [];
     public List<string> SelectedPackages { get; set; } = [];
+
     public RuntimeBuild VulkanBuild { get; set; }
-
     public bool VulkanManaged { get; set; }
-
     public string? VulkanLayerDirectory { get; set; }
     public Dictionary<string, string> VulkanLayerFiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<LayerRegistration> OwnedVulkanRegistrations { get; set; } = [];
     public List<VulkanAppEntry> OwnedVulkanApps { get; set; } = [];
+
     public static JsonSerializerOptions Json { get; } = new()
     {
         WriteIndented = true,

@@ -3,6 +3,7 @@ namespace ReShadeCentralized;
 internal sealed class PackagesGrid : DataGridView
 {
     private bool refreshing;
+
     public event Action<ShaderPackage, bool>? PackageChecked;
 
     public PackagesGrid()
@@ -24,6 +25,7 @@ internal sealed class PackagesGrid : DataGridView
             AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells,
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
+
         Columns.Add(new DataGridViewTextBoxColumn
         {
             Name = "Package",
@@ -32,6 +34,7 @@ internal sealed class PackagesGrid : DataGridView
             AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells,
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
+
         Columns.Add(new DataGridViewTextBoxColumn
         {
             Name = "Status",
@@ -41,6 +44,7 @@ internal sealed class PackagesGrid : DataGridView
             Resizable = DataGridViewTriState.False,
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
+
         CurrentCellDirtyStateChanged += (_, _) =>
         {
             if (IsCurrentCellDirty)
@@ -48,10 +52,11 @@ internal sealed class PackagesGrid : DataGridView
                 CommitEdit(DataGridViewDataErrorContexts.Commit);
             }
         };
+
         CellValueChanged += (_, e) =>
         {
-            if (!refreshing && e.RowIndex >= 0 && e.ColumnIndex == Columns["Selected"]!.Index &&
-                Rows[e.RowIndex].Tag is ShaderPackage package)
+            if (!refreshing && e.RowIndex >= 0 && e.ColumnIndex == Columns["Selected"]!.Index
+                && Rows[e.RowIndex].Tag is ShaderPackage package)
             {
                 PackageChecked?.Invoke(package, Rows[e.RowIndex].Cells["Selected"].Value is true);
             }
@@ -91,7 +96,9 @@ internal sealed class PackagesGrid : DataGridView
 
         string[] statuses =
         [
-            "Not installed (will be added)", "Installed (will be removed)", "Incomplete (will be removed)"
+            "Not installed (will be added)",
+            "Installed (will be removed)",
+            "Incomplete (will be removed)"
         ];
         Font statusFont = DefaultCellStyle.Font ?? Font;
         int textWidth = statuses.Max(text => TextRenderer.MeasureText(text, statusFont).Width);
@@ -116,7 +123,10 @@ internal sealed class PackagesGrid : DataGridView
         e.Handled = true;
     }
 
-    public void SetPackages(IEnumerable<ShaderPackage> packages, HashSet<string> selected, ManagerState? state,
+    public void SetPackages(
+        IEnumerable<ShaderPackage> packages,
+        HashSet<string> selected,
+        ManagerState? state,
         IReadOnlyDictionary<string, bool>? completeness = null)
     {
         refreshing = true;
@@ -128,8 +138,11 @@ internal sealed class PackagesGrid : DataGridView
                 InstalledPackage? installed = state?.Packages.SingleOrDefault(item => item.Id == package.Id);
                 bool complete = installed != null && (completeness?.TryGetValue(installed.Id, out bool known) == true ?
                     known : ShaderFiles.IsPackageComplete(installed, state!.Paths));
-                string status = installed == null ? "Not installed" : complete
-                    ? "Installed" : "Incomplete";
+                string status = installed == null
+                    ? "Not installed"
+                    : complete
+                        ? "Installed"
+                        : "Incomplete";
                 int row = Rows.Add(selected.Contains(package.Id), package.ToString(), status);
                 Rows[row].Tag = package;
                 Rows[row].Cells["Status"].Tag = installed == null ? null : status;
@@ -179,5 +192,4 @@ internal sealed class PackagesGrid : DataGridView
             refreshing = false;
         }
     }
-
 }

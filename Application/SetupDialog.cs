@@ -13,6 +13,7 @@ internal sealed class SetupDialog : Form
     {
         Text = "Setup \u2014 choose new or existing central storage";
         ClientSize = new(720, 160);
+
         TableLayoutPanel table = DialogLayout.Table(this);
         DialogLayout.Row(table, "Central folder", DialogLayout.Browse(root, false));
         DialogLayout.Buttons(table, this, "Continue");

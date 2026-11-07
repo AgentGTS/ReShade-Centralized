@@ -11,6 +11,7 @@ internal static class Program
         Application.ThreadException += (_, eventArgs) => FatalErrors.Terminate(eventArgs.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) => FatalErrors.Terminate(
             eventArgs.ExceptionObject as Exception ?? new Exception("An unhandled runtime failure occurred."));
+
         try
         {
             Run();
@@ -26,6 +27,7 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Application.SetColorMode(SystemInformation.HighContrast ? SystemColorMode.Classic : SystemColorMode.Dark);
         using var instance = new Mutex(true, "Local\\ReShadeCentralized.Manager", out bool first);
+
         if (!first)
         {
             MessageBox.Show("ReShade Centralized is already running.");

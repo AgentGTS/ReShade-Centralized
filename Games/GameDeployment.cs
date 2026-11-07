@@ -85,25 +85,4 @@ public static class GameDeployment
         }
     }
 
-    public static UnregisterResult Remove(GameProfile game, FileTransaction transaction)
-    {
-        var result = new UnregisterResult();
-        foreach (OwnedLink link in game.Links)
-        {
-            if (!LocalFiles.Exists(link.Path) && !Directory.Exists(link.Path))
-            {
-                continue;
-            }
-
-            if (!IsOwnedLink(link))
-            {
-                result.PreservedFiles.Add(link.Path);
-                continue;
-            }
-
-            transaction.Delete(link.Path);
-        }
-
-        return result;
-    }
 }

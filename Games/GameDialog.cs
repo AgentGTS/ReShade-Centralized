@@ -7,12 +7,13 @@ internal sealed partial class GameDialog : Form
 {
     private readonly IReadOnlyList<OwnedLink> managedLinks;
     private readonly ManagerState state;
+
     public InstallationPlan? ReviewedPlan { get; private set; }
     public bool ReplacementConfirmed => replaceConfirmation.Checked;
+
     private readonly RuntimeBuild global;
     private readonly GameProfile original;
     private CancellationTokenSource? detectionCancellation;
-    private int executableVersion;
     private RuntimeBuild? nonVulkanBuild;
     private bool usingGlobalBuild;
     private bool dialogClosing;
@@ -64,18 +65,21 @@ internal sealed partial class GameDialog : Form
         string? path = PortableExecutable.GetValidatedGamePath(executable.Text);
         if (path == null)
         {
-            SetDetectionHint("Choose a valid local x86/x64 .exe outside Windows, then check again.", ApiCheckState.Warning);
+            SetDetectionHint(
+                "Choose a valid local x86/x64 .exe outside Windows, then check again.",
+                ApiCheckState.Warning);
             return;
         }
 
         using var cancellation = new CancellationTokenSource();
         detectionCancellation = cancellation;
-        int currentExecutable = executableVersion;
         SetDetectionHint("Checking graphics API...", ApiCheckState.Checking);
         try
         {
-            RenderApi? detected = await Task.Run(() => GraphicsApiDetector.Detect(path, cancellation.Token), cancellation.Token);
-            if (!CanDisplayDetection(currentExecutable, cancellation.Token))
+            RenderApi? detected = await Task.Run(
+                () => GraphicsApiDetector.Detect(path, cancellation.Token),
+                cancellation.Token);
+            if (!CanDisplayDetection(cancellation.Token))
             {
                 return;
             }
@@ -97,7 +101,7 @@ internal sealed partial class GameDialog : Form
         {
             // Recommendations are optional and must not interrupt a confirmed installation.
             Trace.TraceWarning($"Graphics API recommendation failed: {error}");
-            if (CanDisplayDetection(currentExecutable, cancellation.Token))
+            if (CanDisplayDetection(cancellation.Token))
             {
                 SetDetectionHint("Could not check the graphics API. Select it manually.", ApiCheckState.Warning);
             }
@@ -111,13 +115,11 @@ internal sealed partial class GameDialog : Form
         }
     }
 
-    private bool CanDisplayDetection(int version, CancellationToken cancellationToken) =>
-        !dialogClosing && !IsDisposed && !Disposing && !cancellationToken.IsCancellationRequested &&
-        version == executableVersion;
+    private bool CanDisplayDetection(CancellationToken cancellationToken) =>
+        !dialogClosing && !IsDisposed && !Disposing && !cancellationToken.IsCancellationRequested;
 
     private void CancelApiDetection()
     {
-        executableVersion++;
         detectionCancellation?.Cancel();
     }
 
@@ -161,8 +163,9 @@ internal sealed partial class GameDialog : Form
         InstallationPlan? plan = null;
         try
         {
-            if (PortableExecutable.GetValidatedGamePath(executable.Text.Trim()) != null &&
-                api.SelectedItem is RenderApi && build.SelectedItem is RuntimeBuild)
+            if (PortableExecutable.GetValidatedGamePath(executable.Text.Trim()) != null
+                && api.SelectedItem is RenderApi
+                && build.SelectedItem is RuntimeBuild)
             {
                 GameProfile game = Result();
                 game.Directory = ProfilePaths.DirectoryFor(state, game);
@@ -172,12 +175,16 @@ internal sealed partial class GameDialog : Form
                 {
                     message = "Resolved executable: " + game.Executable + "\n\n" + message;
                 }
+
                 notice = new(message, plan.Conflict != null);
             }
             else
             {
                 notice = InstallationInspection.InspectExistingInstallation(
-                    executable.Text.Trim(), api.SelectedItem as RenderApi?, managedLinks, includePaths: false);
+                    executable.Text.Trim(),
+                    api.SelectedItem as RenderApi?,
+                    managedLinks,
+                    includePaths: false);
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or
@@ -195,10 +202,12 @@ internal sealed partial class GameDialog : Form
         ReviewedPlan = plan;
         replaceConfirmation.Visible = plan?.RequiresConfirmation == true && plan.Conflict == null;
         string path = executable.Text.Trim();
-        installButton.Enabled = PortableExecutable.GetValidatedGamePath(path) != null &&
-            api.SelectedItem is RenderApi && build.SelectedItem is RuntimeBuild &&
-            notice?.BlocksInstallation != true && plan != null &&
-            (!plan.RequiresConfirmation || replaceConfirmation.Checked);
+        installButton.Enabled = PortableExecutable.GetValidatedGamePath(path) != null
+            && api.SelectedItem is RenderApi
+            && build.SelectedItem is RuntimeBuild
+            && notice?.BlocksInstallation != true
+            && plan != null
+            && (!plan.RequiresConfirmation || replaceConfirmation.Checked);
         warningText.Text = (notice?.Message ?? "").ReplaceLineEndings(Environment.NewLine);
         warningText.ForeColor = notice?.BlocksInstallation == true || plan?.RequiresConfirmation == true ?
             DarkTheme.Warning : DarkTheme.Muted;

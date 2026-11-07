@@ -9,9 +9,10 @@ public sealed class VulkanRemovalResult
 public sealed partial class VulkanService
 {
     private static bool SameRegistration(LayerRegistration first, LayerRegistration second) =>
-        first.Hive.Equals(second.Hive, StringComparison.OrdinalIgnoreCase) &&
-        first.View == second.View && first.Kind.Equals(second.Kind, StringComparison.OrdinalIgnoreCase) &&
-        LocalFiles.Same(first.Manifest, second.Manifest);
+        first.Hive.Equals(second.Hive, StringComparison.OrdinalIgnoreCase)
+        && first.View == second.View
+        && first.Kind.Equals(second.Kind, StringComparison.OrdinalIgnoreCase)
+        && LocalFiles.Same(first.Manifest, second.Manifest);
 
     private static bool OwnsRegistration(ManagerState state, LayerRegistration registration) =>
         state.OwnedVulkanRegistrations.Any(owned => SameRegistration(owned, registration));
@@ -34,6 +35,7 @@ public sealed partial class VulkanService
                 throw new IOException("The shared layer's application list was replaced by a link; keeping the layer: " +
                     appsPath);
             }
+
             string[] consumers = IniDocument.Split(IniDocument.Read(appsPath).Get("", "Apps"));
             if (consumers.Length > 0)
             {
@@ -49,8 +51,10 @@ public sealed partial class VulkanService
             {
                 string manifest = Path.Combine(directory, "ReShade" + owned.View + ".json");
                 string library = Path.Combine(directory, "ReShade" + owned.View + ".dll");
-                if (owned.Hive != "HKLM" || owned.Kind != "Implicit" || owned.View is not ("32" or "64") ||
-                    !LocalFiles.Same(owned.Manifest, manifest))
+                if (owned.Hive != "HKLM"
+                    || owned.Kind != "Implicit"
+                    || owned.View is not ("32" or "64")
+                    || !LocalFiles.Same(owned.Manifest, manifest))
                 {
                     reason = "Ownership does not match an app-created registration";
                 }
@@ -62,24 +66,31 @@ public sealed partial class VulkanService
                         state.OwnedVulkanRegistrations.RemoveAll(item => SameRegistration(item, owned));
                         continue;
                     }
+
                     if (value != 0)
                     {
                         reason = "Registry value was changed outside the app";
                     }
+
                     foreach (string path in new[] { manifest, library })
                     {
                         LocalFiles.CheckParents(path);
-                        if (!state.VulkanLayerFiles.TryGetValue(path, out string? hash) ||
-                            LocalFiles.Link(path) != null || Directory.Exists(path) ||
-                            (File.Exists(path) && LocalFiles.Hash(path) != hash))
+                        if (!state.VulkanLayerFiles.TryGetValue(path, out string? hash)
+                            || LocalFiles.Link(path) != null
+                            || Directory.Exists(path)
+                            || (File.Exists(path) && LocalFiles.Hash(path) != hash))
                         {
                             reason = "Layer files were changed or their ownership cannot be verified";
                         }
                     }
                 }
             }
-            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or
-                ArgumentException or System.Security.SecurityException or System.ComponentModel.Win32Exception)
+            catch (Exception error) when (error is IOException
+                or InvalidDataException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or System.Security.SecurityException
+                or System.ComponentModel.Win32Exception)
             {
                 reason = "Cannot verify ownership: " + error.Message;
             }

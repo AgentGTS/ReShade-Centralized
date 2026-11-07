@@ -16,6 +16,7 @@ public sealed class RuntimeService(Downloads downloads)
         const string installerLinkPattern =
             """href\s*=\s*["'](?<url>(?:https://(?:www\.)?reshade\.me)?/downloads/ReShade_""" +
             """Setup_(?<version>[0-9]+\.[0-9]+\.[0-9]+)(?<addon>_Addon)?\.exe)["']""";
+
         foreach (Match match in Regex.Matches(html, installerLinkPattern, RegexOptions.IgnoreCase))
         {
             RuntimeBuild build = match.Groups["addon"].Success ? RuntimeBuild.FullAddon : RuntimeBuild.Standard;
@@ -79,10 +80,10 @@ public sealed class RuntimeService(Downloads downloads)
             using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, stem + ".json")));
             JsonElement layer = manifest.RootElement.GetProperty("layer");
             string library = layer.GetProperty("library_path").GetString() ?? "";
-            if (layer.GetProperty("name").GetString() != "VK_LAYER_reshade" ||
-                layer.GetProperty("type").GetString() != "GLOBAL" ||
-                (library.Replace('\\', '/') != stem + ".dll" &&
-                library.Replace('\\', '/') != "./" + stem + ".dll"))
+            if (layer.GetProperty("name").GetString() != "VK_LAYER_reshade"
+                || layer.GetProperty("type").GetString() != "GLOBAL"
+                || (library.Replace('\\', '/') != stem + ".dll"
+                    && library.Replace('\\', '/') != "./" + stem + ".dll"))
             {
                 throw new InvalidDataException("Unexpected Vulkan manifest identity or library path.");
             }
@@ -96,7 +97,8 @@ public sealed class RuntimeService(Downloads downloads)
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
-        IReadOnlyDictionary<RuntimeBuild, string> links = Discover(await downloads.TextAsync(
+        IReadOnlyDictionary<RuntimeBuild, string> links = Discover(
+            await downloads.TextAsync(
                 "https://reshade.me/",
                 cancellationToken));
         var versions = new Dictionary<RuntimeBuild, string>();
@@ -131,7 +133,8 @@ public sealed class RuntimeService(Downloads downloads)
         CancellationToken cancellationToken)
     {
         var versions = Enum.GetValues<RuntimeBuild>().ToDictionary(
-            build => build, build => ValidatePayload(Path.Combine(staging, build.ToString()), build));
+            build => build,
+            build => ValidatePayload(Path.Combine(staging, build.ToString()), build));
         if (versions.Values.Distinct().Count() != 1)
         {
             throw new InvalidDataException("The two official installers must have matching versions.");

@@ -32,8 +32,8 @@ public sealed class GameLibrary(CentralStorage storage, VulkanService vulkan)
             game.Executable = GameTargetResolver.Resolve(game.Executable, cancellationToken).Executable;
             game.Name = Path.GetFileName(game.Executable);
             string[] configurationPaths = GameFiles.ConfigurationPaths(game.Executable, game.Api);
-            if (updatedState.Games.Any(gameItem => gameItem.Id != game.Id &&
-                GameFiles.ConfigurationPaths(gameItem.Executable, gameItem.Api)
+            if (updatedState.Games.Any(gameItem => gameItem.Id != game.Id
+                && GameFiles.ConfigurationPaths(gameItem.Executable, gameItem.Api)
                     .Any(path => configurationPaths.Any(candidate => LocalFiles.Same(path, candidate)))))
             {
                 throw new IOException("Another managed profile already uses this executable directory. " +
@@ -73,12 +73,9 @@ public sealed class GameLibrary(CentralStorage storage, VulkanService vulkan)
         await storage.ChangeAsync("Unregister game", (updatedState, transaction) =>
         {
             GameProfile game = updatedState.Games.Single(gameItem => gameItem.Id == id);
-            result = GameDeployment.Remove(game, transaction);
+            result = GameRemoval.Remove(updatedState, game, transaction, cancellationToken);
             updatedState.Games.Remove(game);
-            if (updatedState.VulkanManaged)
-            {
-                vulkan.WriteApps(updatedState, transaction, enroll: false);
-            }
+            vulkan.UnregisterGame(updatedState, game, transaction, result);
 
             return Task.CompletedTask;
         }, cancellationToken);

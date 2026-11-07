@@ -11,8 +11,10 @@ internal static class FatalErrors
         {
             ProcessTermination.Exit(1);
         }
+
         using var deadline = new ShutdownDeadline(exitCode: 1);
         deadline.Request();
+
         try
         {
             File.AppendAllText(LogPath, DateTimeOffset.Now.ToString("O") + Environment.NewLine + error +

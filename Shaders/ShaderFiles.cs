@@ -187,8 +187,8 @@ public static class ShaderFiles
             foreach (string file in EnumerateFiles(source))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!extensions.Contains(Path.GetExtension(file).ToLowerInvariant()) ||
-                    package.DeniedEffects.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase))
+                if (!extensions.Contains(Path.GetExtension(file).ToLowerInvariant())
+                    || package.DeniedEffects.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -236,10 +236,10 @@ public static class ShaderFiles
         string name = Path.GetFileNameWithoutExtension(path).ToUpperInvariant();
         return new[]
             { "LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE", "AUTHORS", "CREDITS", "UNLICENSE", "README" }
-            .Any(prefix => name == prefix || name.StartsWith(prefix + "-") || name.StartsWith(prefix + "_")) ||
-            path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                .Any(part => part.Equals("licenses", StringComparison.OrdinalIgnoreCase) ||
-                    part.Equals("licences", StringComparison.OrdinalIgnoreCase));
+            .Any(prefix => name == prefix || name.StartsWith(prefix + "-") || name.StartsWith(prefix + "_"))
+            || path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Any(part => part.Equals("licenses", StringComparison.OrdinalIgnoreCase)
+                    || part.Equals("licences", StringComparison.OrdinalIgnoreCase));
     }
 
     public static List<string> DuplicateEffects(ManagerState state)

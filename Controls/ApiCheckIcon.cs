@@ -26,6 +26,7 @@ internal sealed class ApiCheckIcon : Control
             state = value;
             angle = 0;
             animation.Enabled = Visible && state == ApiCheckState.Checking;
+
             AccessibleDescription = state switch
             {
                 ApiCheckState.Ready => "Ready to check",
@@ -43,10 +44,15 @@ internal sealed class ApiCheckIcon : Control
         TabStop = false;
         AccessibleName = "Graphics API check status";
         AccessibleRole = AccessibleRole.Graphic;
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
-            ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+        SetStyle(
+            ControlStyles.UserPaint
+            | ControlStyles.AllPaintingInWmPaint
+            | ControlStyles.OptimizedDoubleBuffer
+            | ControlStyles.SupportsTransparentBackColor,
+            true);
         BackColor = Color.Transparent;
         State = ApiCheckState.Ready;
+
         animation.Tick += (_, _) =>
         {
             angle = (angle + 30) % 360;
@@ -63,6 +69,12 @@ internal sealed class ApiCheckIcon : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
+        if (state == ApiCheckState.Warning)
+        {
+            WarningIcon.Draw(e.Graphics, ClientRectangle, ForeColor);
+            return;
+        }
+
         float scale = Math.Min(ClientSize.Width, ClientSize.Height) / 16f;
         if (scale <= 0)
         {
@@ -91,12 +103,6 @@ internal sealed class ApiCheckIcon : Control
                 e.Graphics.DrawEllipse(pen, 1.5f, 1.5f, 13, 13);
                 e.Graphics.FillEllipse(fill, 7.2f, 4, 1.6f, 1.6f);
                 e.Graphics.DrawLine(pen, 8, 7, 8, 11.5f);
-                break;
-            case ApiCheckState.Warning:
-                PointF[] triangle = [new(8, 1.5f), new(14.5f, 13.5f), new(1.5f, 13.5f)];
-                e.Graphics.DrawPolygon(pen, triangle);
-                e.Graphics.DrawLine(pen, 8, 5.5f, 8, 8.5f);
-                e.Graphics.FillEllipse(fill, 7.2f, 10.5f, 1.6f, 1.6f);
                 break;
         }
     }

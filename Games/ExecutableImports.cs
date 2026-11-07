@@ -27,9 +27,9 @@ internal static class ExecutableImports
                 FileShare.ReadWrite | FileShare.Delete);
             using var reader = new PEReader(stream, PEStreamOptions.LeaveOpen);
             PEHeaders headers = reader.PEHeaders;
-            if (headers.PEHeader == null || headers.CoffHeader.Machine is not (Machine.I386 or Machine.Amd64) ||
-                !headers.CoffHeader.Characteristics.HasFlag(Characteristics.ExecutableImage) ||
-                headers.CoffHeader.Characteristics.HasFlag(Characteristics.Dll))
+            if (headers.PEHeader == null || headers.CoffHeader.Machine is not (Machine.I386 or Machine.Amd64)
+                || !headers.CoffHeader.Characteristics.HasFlag(Characteristics.ExecutableImage)
+                || headers.CoffHeader.Characteristics.HasFlag(Characteristics.Dll))
             {
                 return null;
             }

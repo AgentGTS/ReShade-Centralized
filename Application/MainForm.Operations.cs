@@ -9,6 +9,7 @@ public sealed partial class MainForm
         {
             await Task.Run(storage.Open, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+
             while (storage.State == null)
             {
                 using var setup = new SetupDialog();
@@ -17,22 +18,27 @@ public sealed partial class MainForm
                     closeAfterSetup = true;
                     throw new OperationCanceledException();
                 }
+
                 await storage.InitializeAsync(setup.CentralRoot, cancellationToken);
             }
+
             storageLoading.Report(new("Loading shader and compatibility catalogs"));
             catalog = await Task.Run(async () =>
             {
-                CompatibilityCatalog.LoadCache(Path.Combine(storage.Store.DirectoryPath, CompatibilityCatalog.CacheName));
-                if (!shaderCatalog.HasCachedCatalog ||
-                    !File.Exists(Path.Combine(storage.Store.DirectoryPath, CompatibilityCatalog.CacheName)))
+                CompatibilityCatalog.LoadCache(
+                    Path.Combine(storage.Store.DirectoryPath, CompatibilityCatalog.CacheName));
+                if (!shaderCatalog.HasCachedCatalog
+                    || !File.Exists(Path.Combine(storage.Store.DirectoryPath, CompatibilityCatalog.CacheName)))
                 {
                     return await RefreshCatalogsAsync(cancellationToken);
                 }
+
                 return shaderCatalog.CachedCatalog(progress);
             }, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             SynchronizePackageChoices();
         }, showStorageLoading: true);
+
         if (closeAfterSetup && !IsDisposed)
         {
             Close();
@@ -55,16 +61,19 @@ public sealed partial class MainForm
         OperationResult result = OperationResult.Failed;
         bool presentationApplied = false;
         storageLoadFailed = false;
+
         if (showStorageLoading)
         {
             SetStorageControlsLocked(true);
         }
+
         tabs.Enabled = false;
         cancelButton.Text = "Cancel";
         cancelButton.Enabled = true;
         statusLabel.Text = description;
         WriteLog(description);
         IProgress<StorageLoadProgress>? loadingProgress = null;
+
         if (showStorageLoading)
         {
             storageLoading.BeginLoading();
@@ -86,6 +95,7 @@ public sealed partial class MainForm
             {
                 throw new OperationCanceledException();
             }
+
             await RefreshViewAsync(currentOperation.Token, loadingProgress);
             presentationApplied = true;
             currentOperation.Token.ThrowIfCancellationRequested();
@@ -94,6 +104,7 @@ public sealed partial class MainForm
             {
                 WriteLog("Finished: " + description);
             }
+
             return true;
         }
         catch (OperationCanceledException)
@@ -108,6 +119,7 @@ public sealed partial class MainForm
             {
                 storageLoading.EndLoading("Central storage unavailable");
             }
+
             ReportError(error);
             return false;
         }
@@ -124,6 +136,7 @@ public sealed partial class MainForm
                     ReportError(error);
                 }
             }
+
             currentOperation.Dispose();
             operationCancellation = null;
             if (!IsDisposed && !Disposing)
@@ -131,9 +144,12 @@ public sealed partial class MainForm
                 storageLoadFailed = showStorageLoading && result != OperationResult.Completed;
                 if (showStorageLoading)
                 {
-                    storageLoading.EndLoading(result == OperationResult.Completed ? null : result == OperationResult.Cancelled ?
-                        "Loading cancelled" : "Central storage unavailable");
+                    storageLoading.EndLoading(
+                        result == OperationResult.Completed ? null
+                        : result == OperationResult.Cancelled ? "Loading cancelled"
+                        : "Central storage unavailable");
                 }
+
                 cancelButton.Text = storageLoadFailed ? "Retry" : "Cancel";
                 cancelButton.Enabled = storageLoadFailed;
                 tabs.Enabled = storage.State != null && !storageLoadFailed;
@@ -143,10 +159,12 @@ public sealed partial class MainForm
                     OperationResult.Cancelled => "Cancelled",
                     _ => "Operation failed"
                 };
+
                 if (showStorageLoading || closeAfterOperation)
                 {
                     SetStorageControlsLocked(closeAfterOperation);
                 }
+
                 if (closeAfterOperation)
                 {
                     BeginInvoke(Close);
@@ -155,7 +173,12 @@ public sealed partial class MainForm
         }
     }
 
-    private enum OperationResult { Failed, Completed, Cancelled }
+    private enum OperationResult
+    {
+        Failed,
+        Completed,
+        Cancelled
+    }
 
     private void WriteLog(string text)
     {
@@ -190,11 +213,13 @@ public sealed partial class MainForm
         {
             return;
         }
+
         WriteLog("Failed: " + error);
         if (closeAfterOperation)
         {
             return;
         }
+
         MessageBox.Show(
             this,
             UserErrors.Describe(error) + "\n\nTechnical details are in Activity.",

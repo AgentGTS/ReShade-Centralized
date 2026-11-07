@@ -33,9 +33,10 @@ EVERYDAY ACTIONS
 - Apply shader changes before leaving the tab, refreshing the catalog, or purging; unapplied selections reset. Use Refresh catalog to update the package list.
 - Update ReShade: close affected games, then Runtime & storage > Update ReShade.
 - Change a game's executable, API, or build: select it > Repair / edit. Use Repair all to repair all registered games.
-- Yellow game warning: hover for details, then use Repair / edit.
+- Red game warning: the managed installation is missing or damaged. Hover for details, then use Repair / edit.
+- Yellow game warning: the selected preset needs effects missing from central shader packages, or its files could not be checked. Hover for details, then install the needed packages in Shader packages. Legacy techniques without filenames cannot be fully checked. Local shaders and disabled effects are excluded. Warnings refresh when returning to the app or Games tab.
 - Find presets and settings: select a game > Open profile.
-- Remove ReShade from a game: select it > Unregister. Profile files and local shaders are kept.
+- Remove ReShade from a game: close it, then select it > Unregister. This removes verified app-owned injector/config links and deletes the selected and default presets inside its central profile. External/shared presets, other profile files, local shaders and shared runtimes are kept. Changed or unverifiable files are preserved and reported; a retained injector/config may still load ReShade.
 - Read credits and licenses: open Credits.
 
 EXISTING INSTALLATIONS AND APP UPDATES

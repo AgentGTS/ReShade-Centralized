@@ -40,5 +40,4 @@ public sealed class RuntimeInstaller(CentralStorage storage, VulkanService vulka
             return Task.CompletedTask;
         }, cancellationToken);
     }
-
 }

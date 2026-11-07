@@ -28,6 +28,7 @@ internal sealed class HelpDialog : Form
             Text = reader.ReadToEnd().ReplaceLineEndings(Environment.NewLine)
         };
         instructions.Select(0, 0);
+
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -39,6 +40,7 @@ internal sealed class HelpDialog : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(instructions, 0, 0);
+
         var closeButton = new FlatButton("Close")
         {
             DialogResult = DialogResult.OK,
@@ -46,6 +48,7 @@ internal sealed class HelpDialog : Form
             Margin = new Padding(0, 16, 0, 0)
         };
         layout.Controls.Add(closeButton, 0, 1);
+
         Controls.Add(layout);
         AcceptButton = closeButton;
         CancelButton = closeButton;

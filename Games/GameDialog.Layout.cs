@@ -307,7 +307,9 @@ internal sealed partial class GameDialog
         bool scrollWarning = textHeight > maxWarningHeight;
         if (scrollWarning)
         {
-            warningText.MaximumSize = new Size(Math.Max(1, warningWidth - SystemInformation.VerticalScrollBarWidth), 0);
+            warningText.MaximumSize = new Size(
+                Math.Max(1, warningWidth - SystemInformation.VerticalScrollBarWidth),
+                0);
             textHeight = warningText.PreferredSize.Height;
         }
 

@@ -7,6 +7,7 @@ internal sealed class StagingDirectory : IDisposable
     public StagingDirectory(StateStore store)
     {
         Path = System.IO.Path.Combine(store.Staging, Guid.NewGuid().ToString("N"));
+
         try
         {
             Directory.CreateDirectory(Path);

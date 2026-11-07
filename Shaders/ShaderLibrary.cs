@@ -18,6 +18,7 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             report.Messages.Add(message);
             progress?.Report(message);
         }
+
         void ReportResult((bool Success, string Message) result, bool removal = false)
         {
             if (!result.Success)
@@ -32,6 +33,7 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             {
                 report.InstalledCount++;
             }
+
             Report(result.Message);
         }
 
@@ -39,17 +41,25 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
         {
             storage.RequireState();
 
-            ShaderSelectionPlan? currentPlan = reviewedPlan == null ? null : CreateShaderSelectionPlan(selected, catalog);
-            if (reviewedPlan != null && (currentPlan!.Fingerprint != reviewedPlan.Fingerprint ||
-                !currentPlan.Removals.Select(package => package.Id)
-                    .SequenceEqual(reviewedPlan.Removals.Select(package => package.Id), StringComparer.OrdinalIgnoreCase)))
+            ShaderSelectionPlan? currentPlan = reviewedPlan == null
+                ? null
+                : CreateShaderSelectionPlan(selected, catalog);
+            if (reviewedPlan != null && (currentPlan!.Fingerprint != reviewedPlan.Fingerprint
+                || !currentPlan.Removals.Select(package => package.Id)
+                    .SequenceEqual(
+                        reviewedPlan.Removals.Select(package => package.Id),
+                        StringComparer.OrdinalIgnoreCase)))
             {
                 throw new IOException("Shader selections or installed packages changed. Review the removals again.");
             }
 
             IReadOnlyList<ShaderPackage> packages = ShaderDependencies.WithDependencies(
-                selected, catalog, (package, message) => ReportResult((false, $"Skipped {package.Name}: {message}")));
-            ShaderPackage[] desired = selected.Concat(packages).DistinctBy(package => package.Id).ToArray();
+                selected,
+                catalog,
+                (package, message) => ReportResult((false, $"Skipped {package.Name}: {message}")));
+            ShaderPackage[] desired = selected.Concat(packages)
+                .DistinctBy(package => package.Id)
+                .ToArray();
             if (reviewedPlan != null)
             {
                 SaveShaderChoices(desired, cancellationToken);
@@ -58,8 +68,9 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ShaderPackage[] missingDependencies = ShaderDependencies.Dependencies(package, packages)
-                    .Where(dependency => !storage.State!.Packages.Any(installed => installed.Id == dependency.Id &&
-                        ShaderFiles.IsPackageComplete(installed, storage.State.Paths))).ToArray();
+                    .Where(dependency => !storage.State!.Packages.Any(installed => installed.Id == dependency.Id
+                        && ShaderFiles.IsPackageComplete(installed, storage.State.Paths)))
+                    .ToArray();
                 if (missingDependencies.Length > 0)
                 {
                     ReportResult((false, $"Skipped {package.Name}: required packages are unavailable: " +
@@ -168,9 +179,11 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             storage.Commit(updatedState, transaction, cancellationToken);
             return (true, "Installed: " + package.Name);
         }
-        catch (Exception error) when (error is IOException or HttpRequestException or InvalidDataException
-        or UnauthorizedAccessException || (error is OperationCanceledException &&
-            !cancellationToken.IsCancellationRequested))
+        catch (Exception error) when (error is IOException
+            or HttpRequestException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            || (error is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         {
             string explanation = error is InvalidDataException ?
                 "The package archive is invalid or unsupported. Open Shader packages > Refresh catalog, " +
@@ -198,6 +211,7 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             }
         }
     }
+
     public static ShaderPackage PackageDescriptor(InstalledPackage installed) => new()
     {
         Id = installed.Id,
@@ -216,11 +230,16 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
             throw new InvalidDataException("Refresh the shader catalog before applying a selection; " +
                 "required effects are missing.");
         }
-        ShaderPackage[] desired = selected.Concat(ShaderDependencies.WithDependencies(selected, catalog, (_, _) => { }))
-            .DistinctBy(package => package.Id).OrderBy(package => package.Id, StringComparer.Ordinal).ToArray();
-        HashSet<string> ids = desired.Select(package => package.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        ShaderPackage[] desired = selected
+            .Concat(ShaderDependencies.WithDependencies(selected, catalog, (_, _) => { }))
+            .DistinctBy(package => package.Id)
+            .OrderBy(package => package.Id, StringComparer.Ordinal)
+            .ToArray();
+        HashSet<string> ids = desired.Select(package => package.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         InstalledPackage[] removals = state.Clone().Packages.Where(package => !ids.Contains(package.Id))
-            .OrderBy(package => package.Id, StringComparer.Ordinal).ToArray();
+            .OrderBy(package => package.Id, StringComparer.Ordinal)
+            .ToArray();
         string input = state.Paths.Root + JsonSerializer.Serialize(desired, ManagerState.Json) +
             JsonSerializer.Serialize(removals, ManagerState.Json);
         string fingerprint = LocalFiles.HashText(input);
@@ -262,8 +281,8 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
                 catalog.SingleOrDefault(package => package.Id == installed.Id) ?? PackageDescriptor(installed))
                 .ToArray();
             InstalledPackage next = remaining.FirstOrDefault(candidate => !descriptors.Any(other =>
-                ShaderDependencies.Dependencies(other, descriptors).Any(dependency => dependency.Id == candidate.Id))) ??
-                throw new InvalidDataException("Shader package dependencies contain a cycle. " +
+                ShaderDependencies.Dependencies(other, descriptors).Any(dependency => dependency.Id == candidate.Id)))
+                ?? throw new InvalidDataException("Shader package dependencies contain a cycle. " +
                     "No further packages were removed.");
             remaining.Remove(next);
             yield return next;
@@ -279,17 +298,23 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
         try
         {
             ShaderPackage[] retained = storage.State!.Packages.Select(installed =>
-                catalog.SingleOrDefault(entry => entry.Id == installed.Id) ?? PackageDescriptor(installed)).ToArray();
+                catalog.SingleOrDefault(entry => entry.Id == installed.Id) ?? PackageDescriptor(installed))
+                .ToArray();
             string[] consumers = retained.Where(other => ShaderDependencies.Dependencies(other, retained)
-                .Any(dependency => dependency.Id == package.Id)).Select(other => other.Name).ToArray();
+                .Any(dependency => dependency.Id == package.Id))
+                .Select(other => other.Name)
+                .ToArray();
             if (consumers.Length > 0)
             {
                 return (false, $"Kept {package.Name}: still required by {string.Join(", ", consumers)}.");
             }
 
             ManagerState updated = storage.State!.Clone();
-            string[] roots = [ShaderFiles.PackageDirectory(updated.Paths.Shaders, package.Id),
-                ShaderFiles.PackageDirectory(updated.Paths.Textures, package.Id)];
+            string[] roots =
+            [
+                ShaderFiles.PackageDirectory(updated.Paths.Shaders, package.Id),
+                ShaderFiles.PackageDirectory(updated.Paths.Textures, package.Id)
+            ];
             RemoveShaderFiles(updated, roots, "Remove shader package: " + package.Name, transaction =>
             {
                 updated.Packages.RemoveAll(entry => entry.Id == package.Id);
@@ -298,7 +323,6 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
                 {
                     ConfigurationService.Update(updated, game, transaction, removedSearchRoots: roots);
                 }
-
             }, cancellationToken);
             return (true, "Removed: " + package.Name);
         }
@@ -310,8 +334,12 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
     }
 
     private void RemoveShaderFiles(
-        ManagerState state, IReadOnlyList<string> roots, string description,
-        Action<FileTransaction> updateState, CancellationToken cancellationToken, Action<int>? beforeDelete = null)
+        ManagerState state,
+        IReadOnlyList<string> roots,
+        string description,
+        Action<FileTransaction> updateState,
+        CancellationToken cancellationToken,
+        Action<int>? beforeDelete = null)
     {
         var files = new List<string>();
         foreach (string root in roots)
@@ -369,5 +397,4 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
         SafeArchive.Extract(zip, extracted, cancellationToken);
         return extracted;
     }
-
 }

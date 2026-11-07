@@ -72,7 +72,9 @@ public static class InstallationPlanner
         {
             observations.Add("Configuration source: " + source);
             Observe(source);
-            preset = ConfigurationService.SelectedPreset(ReadAdoptedConfiguration(source), Path.GetDirectoryName(source)!);
+            preset = ConfigurationService.SelectedPreset(
+                ReadAdoptedConfiguration(source),
+                Path.GetDirectoryName(source)!);
             if (preset != null)
             {
                 // Opening the file here makes unreadable selections fail before replacing any game files.
@@ -127,8 +129,8 @@ public static class InstallationPlanner
             throw new IOException(current.Conflict);
         }
 
-        if ((reviewed != null && current.Fingerprint != reviewed.Fingerprint) ||
-            (current.RequiresConfirmation && (reviewed == null || !replaceExisting)))
+        if ((reviewed != null && current.Fingerprint != reviewed.Fingerprint)
+            || (current.RequiresConfirmation && (reviewed == null || !replaceExisting)))
         {
             throw new IOException("Review the installation changes again and confirm replacement of existing files.");
         }

@@ -26,8 +26,9 @@ public sealed partial class VulkanService(ILayerRegistry registry)
                 if (File.Exists(registration.Manifest))
                 {
                     using var manifest = JsonDocument.Parse(File.ReadAllText(registration.Manifest));
-                    recognized |= manifest.RootElement.TryGetProperty("layer", out JsonElement layer) &&
-                        layer.TryGetProperty("name", out JsonElement name) && name.GetString() == "VK_LAYER_reshade";
+                    recognized |= manifest.RootElement.TryGetProperty("layer", out JsonElement layer)
+                        && layer.TryGetProperty("name", out JsonElement name)
+                        && name.GetString() == "VK_LAYER_reshade";
                 }
 
                 string? library = RecognizedLibrary(registration.Manifest);
@@ -41,8 +42,12 @@ public sealed partial class VulkanService(ILayerRegistry registry)
                         "Cannot verify the existing ReShade layer: " + registration.Manifest);
                 }
             }
-            catch (Exception error) when (error is JsonException or IOException or UnauthorizedAccessException or
-                InvalidOperationException or KeyNotFoundException or ArgumentException)
+            catch (Exception error) when (error is JsonException
+                or IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or KeyNotFoundException
+                or ArgumentException)
             {
                 // An uncertain ReShade registration must not be replaced with a competing layer.
                 if (recognized)
@@ -71,7 +76,8 @@ public sealed partial class VulkanService(ILayerRegistry registry)
         }
 
         var consumers = state.Games.Where(game => game.Api == RenderApi.Vulkan)
-            .Select(game => game.Executable).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .Select(game => game.Executable)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         try
         {
             List<RegisteredLayer> layers = RegisteredLayers();
@@ -79,8 +85,8 @@ public sealed partial class VulkanService(ILayerRegistry registry)
             {
                 foreach (string application in IniDocument.Split(IniDocument.Read(path).Get("", "Apps")))
                 {
-                    if (!state.Games.Any(game => game.Api != RenderApi.Vulkan &&
-                        LocalFiles.Same(game.Executable, application)))
+                    if (!state.Games.Any(game => game.Api != RenderApi.Vulkan
+                        && LocalFiles.Same(game.Executable, application)))
                     {
                         consumers.Add(application);
                     }
@@ -96,26 +102,38 @@ public sealed partial class VulkanService(ILayerRegistry registry)
                     return new(false, missing, applications);
                 }
 
-                if (!existing.Any(layer => layer.Registration.Kind == "Implicit" &&
-                    registry.Read(layer.Registration) == 0))
+                if (!existing.Any(layer => layer.Registration.Kind == "Implicit"
+                    && registry.Read(layer.Registration) == 0))
                 {
                     return new(false,
-                        "An existing shared layer is disabled or explicit. Use its installer to enable it.", applications);
+                        "An existing shared layer is disabled or explicit. Use its installer to enable it.",
+                        applications);
                 }
             }
 
             bool external = layers.Any(layer => !OwnsRegistration(state, layer.Registration));
-            string message = external ? "Using existing shared layers. Their runtimes and registrations are retained." :
-                "Shared layer available (x86 and x64).";
+            string message = external
+                ? "Using existing shared layers. Their runtimes and registrations are retained."
+                : "Shared layer available (x86 and x64).";
             return new(true, message, applications);
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or
-            JsonException or
-            InvalidOperationException or KeyNotFoundException or ArgumentException or NotSupportedException or
-            System.Security.SecurityException or System.ComponentModel.Win32Exception or BadImageFormatException)
+        catch (Exception error) when (error is IOException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            or JsonException
+            or InvalidOperationException
+            or KeyNotFoundException
+            or ArgumentException
+            or NotSupportedException
+            or System.Security.SecurityException
+            or System.ComponentModel.Win32Exception
+            or BadImageFormatException)
         {
-            return new(false, "Cannot verify the existing Vulkan layer; see Activity. Its registration was retained.",
-                consumers.Order(StringComparer.OrdinalIgnoreCase).ToArray(), error.Message);
+            return new(
+                false,
+                "Cannot verify the existing Vulkan layer; see Activity. Its registration was retained.",
+                consumers.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+                error.Message);
         }
     }
 
@@ -127,9 +145,9 @@ public sealed partial class VulkanService(ILayerRegistry registry)
         }
 
         using var json = JsonDocument.Parse(File.ReadAllText(path));
-        if (!json.RootElement.TryGetProperty("layer", out JsonElement layer) ||
-            !layer.TryGetProperty("name", out JsonElement name) ||
-            name.GetString() != "VK_LAYER_reshade")
+        if (!json.RootElement.TryGetProperty("layer", out JsonElement layer)
+            || !layer.TryGetProperty("name", out JsonElement name)
+            || name.GetString() != "VK_LAYER_reshade")
         {
             return null;
         }
@@ -150,6 +168,7 @@ public sealed partial class VulkanService(ILayerRegistry registry)
         List<RegisteredLayer> layers = RegisteredLayers();
         string binaries = state.Paths.Binaries(state.VulkanBuild);
         state.VulkanLayerDirectory ??= Path.Combine(state.Paths.Root, "Vulkan");
+
         foreach (string view in new[] { "32", "64" })
         {
             RegisteredLayer[] existing = layers.Where(layer => MatchesArchitecture(layer, view)).ToArray();
@@ -167,6 +186,7 @@ public sealed partial class VulkanService(ILayerRegistry registry)
             string manifest = Path.Combine(state.VulkanLayerDirectory, "ReShade" + view + ".json");
             UpdateOwnedLayer(state, manifest, binaries, view, transaction);
             var registration = new LayerRegistration("HKLM", view, manifest);
+
             // Never rewrite an existing registry value, including a disabled registration.
             if (registry.Read(registration) == null)
             {
@@ -203,9 +223,10 @@ public sealed partial class VulkanService(ILayerRegistry registry)
             string name = "ReShade" + view + extension;
             string target = Path.Combine(directory, name);
             LocalFiles.CheckParents(target);
-            if (LocalFiles.Link(target) != null || (File.Exists(target) &&
-                (!state.VulkanLayerFiles.TryGetValue(target, out string? hash) ||
-                LocalFiles.Hash(target) != hash)))
+            if (LocalFiles.Link(target) != null
+                || (File.Exists(target)
+                    && (!state.VulkanLayerFiles.TryGetValue(target, out string? hash)
+                        || LocalFiles.Hash(target) != hash)))
             {
                 throw new IOException("Shared layer file was changed outside this app; preserving it: " + target);
             }
@@ -235,8 +256,8 @@ public sealed partial class VulkanService(ILayerRegistry registry)
             {
                 string view = game.Architecture == CpuArchitecture.X86 ? "32" : "64";
                 RegisteredLayer? layer = layers.Where(layer => MatchesArchitecture(layer, view))
-                    .OrderByDescending(layer => layer.Registration.Kind == "Implicit" &&
-                        registry.Read(layer.Registration) == 0)
+                    .OrderByDescending(layer => layer.Registration.Kind == "Implicit"
+                        && registry.Read(layer.Registration) == 0)
                     .FirstOrDefault();
                 if (layer != null)
                 {
@@ -247,23 +268,26 @@ public sealed partial class VulkanService(ILayerRegistry registry)
         else
         {
             desired.AddRange(state.OwnedVulkanApps.Where(entry => state.Games.Any(game =>
-                game.Api == RenderApi.Vulkan &&
-                LocalFiles.Same(game.Executable, entry.Executable))));
+                game.Api == RenderApi.Vulkan
+                && LocalFiles.Same(game.Executable, entry.Executable))));
         }
 
         VulkanAppEntry[] owned = state.OwnedVulkanApps.Distinct().ToArray();
         var nextOwned = new List<VulkanAppEntry>();
-        IEnumerable<string> paths = owned.Concat(desired).Select(entry => entry.Path)
+        IEnumerable<string> paths = owned.Concat(desired)
+            .Select(entry => entry.Path)
             .Distinct(StringComparer.OrdinalIgnoreCase);
+
         foreach (string path in paths)
         {
             var document = IniDocument.Read(path);
             string[] original = IniDocument.Split(document.Get("", "Apps"));
             var applications = original.ToList();
+
             foreach (VulkanAppEntry entry in owned.Where(entry => LocalFiles.Same(entry.Path, path)))
             {
-                bool keep = desired.Any(item => LocalFiles.Same(item.Path, path) &&
-                    LocalFiles.Same(item.Executable, entry.Executable));
+                bool keep = desired.Any(item => LocalFiles.Same(item.Path, path)
+                    && LocalFiles.Same(item.Executable, entry.Executable));
                 if (keep)
                 {
                     nextOwned.Add(entry);

@@ -8,12 +8,17 @@ internal static class DarkTheme
     private const int WindowCornerPreferenceAttribute = 33;
     private const int CaptionColorAttribute = 35;
     private const int CaptionTextColorAttribute = 36;
+
     public static Color Background =>
         SystemInformation.HighContrast ? SystemColors.Control : Color.FromArgb(19, 22, 27);
-    public static Color Surface => SystemInformation.HighContrast ? SystemColors.Window : Color.FromArgb(27, 32, 39);
-    public static Color Raised => SystemInformation.HighContrast ? SystemColors.Control : Color.FromArgb(35, 42, 51);
-    public static Color Input => SystemInformation.HighContrast ? SystemColors.Window : Color.FromArgb(22, 27, 33);
-    public static Color Border => SystemInformation.HighContrast ? SystemColors.WindowText : Color.FromArgb(55, 65, 78);
+    public static Color Surface =>
+        SystemInformation.HighContrast ? SystemColors.Window : Color.FromArgb(27, 32, 39);
+    public static Color Raised =>
+        SystemInformation.HighContrast ? SystemColors.Control : Color.FromArgb(35, 42, 51);
+    public static Color Input =>
+        SystemInformation.HighContrast ? SystemColors.Window : Color.FromArgb(22, 27, 33);
+    public static Color Border =>
+        SystemInformation.HighContrast ? SystemColors.WindowText : Color.FromArgb(55, 65, 78);
     public static Color Text =>
         SystemInformation.HighContrast ? SystemColors.WindowText : Color.FromArgb(232, 237, 243);
     public static Color Muted =>
@@ -26,7 +31,8 @@ internal static class DarkTheme
         SystemInformation.HighContrast ? SystemColors.WindowText : Color.FromArgb(255, 113, 113);
     public static Color OnAccent =>
         SystemInformation.HighContrast ? SystemColors.HighlightText : Color.FromArgb(15, 35, 32);
-    public static Color Hover => SystemInformation.HighContrast ? SystemColors.Highlight : Color.FromArgb(49, 61, 73);
+    public static Color Hover =>
+        SystemInformation.HighContrast ? SystemColors.Highlight : Color.FromArgb(49, 61, 73);
     public static Color Selection =>
         SystemInformation.HighContrast ? SystemColors.Highlight : Color.FromArgb(40, 69, 69);
 
@@ -41,6 +47,7 @@ internal static class DarkTheme
         form.ForeColor = Text;
         ApplyControls(form);
         form.HandleCreated += (_, _) => ApplyWindowChrome(form);
+
         if (form.IsHandleCreated)
         {
             ApplyWindowChrome(form);
@@ -131,12 +138,13 @@ internal static class DarkTheme
         {
             int size = bounds.Width;
             using var tick = new Pen(locked ? Muted : OnAccent, strokeWidth);
-            graphics.DrawLines(tick,
-            [
-                new Point(bounds.Left + (size / 4), bounds.Top + (size / 2)),
-                new Point(bounds.Left + ((size * 7) / 16), bounds.Top + ((size * 11) / 16)),
-                new Point(bounds.Left + ((size * 3) / 4), bounds.Top + (size / 3))
-            ]);
+            graphics.DrawLines(
+                tick,
+                [
+                    new Point(bounds.Left + (size / 4), bounds.Top + (size / 2)),
+                    new Point(bounds.Left + ((size * 7) / 16), bounds.Top + ((size * 11) / 16)),
+                    new Point(bounds.Left + ((size * 3) / 4), bounds.Top + (size / 3))
+                ]);
         }
     }
 
@@ -147,6 +155,7 @@ internal static class DarkTheme
         // Unsupported DWM attributes are ignored by older Windows versions.
         DwmSetWindowAttribute(form.Handle, ImmersiveDarkModeAttribute, ref darkMode, sizeof(int));
         DwmSetWindowAttribute(form.Handle, WindowCornerPreferenceAttribute, ref squareCorners, sizeof(int));
+
         if (!SystemInformation.HighContrast)
         {
             int captionColor = Background.R | (Background.G << 8) | (Background.B << 16);

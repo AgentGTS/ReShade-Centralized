@@ -68,11 +68,15 @@ public static class ConfigurationService
     {
         // Keep custom paths alongside the current package and game-local paths.
         string[] desiredPaths = desired.ToArray();
-        var recursiveRoots = desiredPaths.Where(path => path.EndsWith(Path.DirectorySeparatorChar + "**"))
-            .Select(path => path[..^3]).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var customPaths = IniDocument.Split(existing).Where(path => path.Length > 0 &&
-            !desiredPaths.Contains(path, StringComparer.OrdinalIgnoreCase) &&
-            !recursiveRoots.Contains(path.TrimEnd('\\', '/')));
+        var recursiveRoots = desiredPaths
+            .Where(path => path.EndsWith(Path.DirectorySeparatorChar + "**"))
+            .Select(path => path[..^3])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var customPaths = IniDocument.Split(existing)
+            .Where(path => path.Length > 0
+                && !desiredPaths.Contains(path, StringComparer.OrdinalIgnoreCase)
+                && !recursiveRoots.Contains(path.TrimEnd('\\', '/')));
+
         return IniDocument.Join(desiredPaths.Concat(customPaths).Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
@@ -121,8 +125,8 @@ public static class ConfigurationService
             {
                 existing = IniDocument.Join(IniDocument.Split(existing).Where(search =>
                     string.IsNullOrWhiteSpace(search) || !removedSearchRoots.Any(root =>
-                        LocalFiles.Same(search.TrimEnd('\\', '/', '*'), root) ||
-                        search.StartsWith(root.TrimEnd('\\', '/') + Path.DirectorySeparatorChar,
+                        LocalFiles.Same(search.TrimEnd('\\', '/', '*'), root)
+                        || search.StartsWith(root.TrimEnd('\\', '/') + Path.DirectorySeparatorChar,
                             StringComparison.OrdinalIgnoreCase))));
             }
             document.Set("GENERAL", key, ManagedList(existing,

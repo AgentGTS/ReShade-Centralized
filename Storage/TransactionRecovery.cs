@@ -23,8 +23,8 @@ public static class TransactionRecovery
             {
                 foreach (string line in text[..end].Split('\n', StringSplitOptions.RemoveEmptyEntries))
                 {
-                    JournalEvent entry = JsonSerializer.Deserialize<JournalEvent>(line, ManagerState.Json) ??
-                        throw new InvalidDataException("Invalid transaction event.");
+                    JournalEvent entry = JsonSerializer.Deserialize<JournalEvent>(line, ManagerState.Json)
+                        ?? throw new InvalidDataException("Invalid transaction event.");
                     if (entry.File != null)
                     {
                         journal.Files.Add(entry.File);
@@ -34,7 +34,6 @@ public static class TransactionRecovery
                     {
                         journal.Registry.Add(entry.Registry);
                     }
-
                 }
             }
         }
@@ -58,16 +57,42 @@ public static class TransactionRecovery
             }
         }
 
+        if (journal.Files.Any(item => item.ExpectedModifiedHash != null && (item.Backup == null || item.Hash == null)))
+        {
+            throw new InvalidDataException("A validated shared-file recovery record is incomplete.");
+        }
+
         if (journal.Registry.Count > 0 && registry == null)
         {
             throw new InvalidOperationException("Registry access is required to recover this operation.");
         }
 
-        FileSnapshot[] restore = journal.Files.AsEnumerable().Reverse().Where(item => !AlreadyOriginal(item)).ToArray();
-        // Check locked/read-only regular destinations before undoing any other file.
-        foreach (FileSnapshot item in restore)
+        var restore = new List<FileSnapshot>();
+        foreach (FileSnapshot item in journal.Files.AsEnumerable().Reverse())
         {
             CheckParents(item.Path);
+            if (AlreadyOriginal(item))
+            {
+                continue;
+            }
+
+            if (item.RestoreOnlyIfMissing && (Exists(item.Path) || Directory.Exists(item.Path)))
+            {
+                throw new IOException("Cannot restore " + item.Path +
+                    ": another file or directory now occupies the path. It was preserved; " +
+                    "move it elsewhere and retry. Recovery data is retained in " + directory + ".");
+            }
+
+            if (item.ExpectedModifiedHash != null
+                && (Link(item.Path) != null
+                    || !File.Exists(item.Path)
+                    || Hash(item.Path) != item.ExpectedModifiedHash))
+            {
+                throw new IOException("Cannot restore " + item.Path +
+                    ": it changed outside the app after this operation. It was preserved; " +
+                    "recovery data is retained in " + directory + ".");
+            }
+
             if (File.Exists(item.Path) && Link(item.Path) == null)
             {
                 using var handle = new FileStream(
@@ -76,15 +101,23 @@ public static class TransactionRecovery
                     FileAccess.ReadWrite,
                     FileShare.ReadWrite | FileShare.Delete);
             }
+
+            restore.Add(item);
         }
 
         foreach (FileSnapshot item in restore)
         {
             CheckParents(item.Path);
             Directory.CreateDirectory(Path.GetDirectoryName(item.Path)!);
+            if (item.ExpectedModifiedHash != null)
+            {
+                FileTransaction.RestoreValidatedRewrite(item, Contained(directory, item.Backup!));
+                continue;
+            }
+
             if (item.LinkTarget != null)
             {
-                if (Exists(item.Path))
+                if (!item.RestoreOnlyIfMissing && Exists(item.Path))
                 {
                     File.Delete(item.Path);
                 }
@@ -93,14 +126,14 @@ public static class TransactionRecovery
             }
             else if (item.Backup != null)
             {
-                if (Link(item.Path) != null)
+                if (!item.RestoreOnlyIfMissing && Link(item.Path) != null)
                 {
                     File.Delete(item.Path);
                 }
 
-                File.Copy(Contained(directory, item.Backup), item.Path, true);
+                File.Copy(Contained(directory, item.Backup), item.Path, !item.RestoreOnlyIfMissing);
             }
-            else if (Exists(item.Path))
+            else if (!item.RestoreOnlyIfMissing && Exists(item.Path))
             {
                 File.Delete(item.Path);
             }
@@ -128,10 +161,12 @@ public static class TransactionRecovery
 
         if (item.Backup != null)
         {
-            return Link(item.Path) == null && File.Exists(item.Path) && Hash(item.Path) == item.Hash;
+            return Link(item.Path) == null
+                && File.Exists(item.Path)
+                && Hash(item.Path) == item.Hash;
         }
 
-        return !Exists(item.Path);
+        return !Exists(item.Path) && !Directory.Exists(item.Path);
     }
 
     internal static void Cleanup(string directory, Action<string>? reportWarning)

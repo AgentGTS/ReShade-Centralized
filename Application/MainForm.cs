@@ -130,10 +130,12 @@ public sealed partial class MainForm : Form
         runtimes = new(storage, vulkan, downloads);
         shaderCatalog = new(downloads, storage.Store);
         shaders = new(storage, downloads);
+
         using (Stream icon = typeof(MainForm).Assembly.GetManifestResourceStream("ReShadeCentralized.AppIcon.ico")!)
         {
             Icon = new Icon(icon);
         }
+
         Text = $"ReShade Centralized {AppVersion}";
         ClientSize = new(1080, 760);
         MinimumSize = new(900, 650);
@@ -142,6 +144,7 @@ public sealed partial class MainForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         progress = new Progress<string>(WriteLog);
         storage.Warning += message => progress.Report(message);
+
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -154,6 +157,7 @@ public sealed partial class MainForm : Form
         root.RowStyles.Add(new(SizeType.AutoSize));
         Controls.Add(root);
         root.Controls.Add(tabs);
+
         var footer = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -170,6 +174,7 @@ public sealed partial class MainForm : Form
         footer.Controls.Add(statusLabel, 0, 0);
         footer.Controls.Add(runtimeStatusLabel, 1, 0);
         footer.Controls.Add(cancelButton, 2, 0);
+
         var helpButton = new FlatButton("?")
         {
             AutoSize = false,
@@ -182,12 +187,14 @@ public sealed partial class MainForm : Form
         };
         helpButton.Click += (_, _) => ShowHelp();
         footer.Controls.Add(helpButton, 3, 0);
+
         HelpRequested += (_, e) =>
         {
             ShowHelp();
             e.Handled = true;
         };
         root.Controls.Add(footer);
+
         cancelButton.Click += async (_, _) =>
         {
             if (storageLoadFailed && operationCancellation == null)
@@ -202,6 +209,7 @@ public sealed partial class MainForm : Form
         BuildGames();
         BuildPackages();
         BuildSettings();
+
         tabs.Deselected += (_, e) =>
         {
             if (e.TabPageIndex == 1 && operationCancellation == null)
@@ -238,6 +246,7 @@ public sealed partial class MainForm : Form
             {
                 this.shutdownDeadline.Request();
             }
+
             if (operationCancellation != null)
             {
                 e.Cancel = true;
@@ -269,6 +278,7 @@ public sealed partial class MainForm : Form
         {
             return;
         }
+
         using var dialog = new HelpDialog();
         dialog.ShowDialog(this);
     }
@@ -280,6 +290,7 @@ public sealed partial class MainForm : Form
         Func<bool>? isAvailable = null)
     {
         var button = new FlatButton(label, primary);
+
         if (isAvailable != null)
         {
             actionAvailability.Add((button, isAvailable));
@@ -314,8 +325,8 @@ public sealed partial class MainForm : Form
 
         if (applySelectionButton != null)
         {
-            bool updateOnly = selectedPackageIds.Count > 0 && storage.State != null &&
-                selectedPackageIds.SetEquals(storage.State.Packages.Select(package => package.Id));
+            bool updateOnly = selectedPackageIds.Count > 0 && storage.State != null
+                && selectedPackageIds.SetEquals(storage.State.Packages.Select(package => package.Id));
             applySelectionButton.Text = updateOnly ? "Update selected" : "Apply selection";
         }
     }
@@ -324,6 +335,7 @@ public sealed partial class MainForm : Form
     {
         var page = new TabPage(tabName) { Padding = new Padding(20) };
         tabs.TabPages.Add(page);
+
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -366,6 +378,7 @@ public sealed partial class MainForm : Form
             using var border = new Pen(DarkTheme.Border);
             e.Graphics.DrawRectangle(border, 0, 0, section.Width - 1, section.Height - 1);
         };
+
         parent.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         parent.Controls.Add(section, 0, parent.RowCount++);
         AddSectionRow(section, new Label
@@ -384,5 +397,4 @@ public sealed partial class MainForm : Form
         section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         section.Controls.Add(control, 0, section.RowCount++);
     }
-
 }
