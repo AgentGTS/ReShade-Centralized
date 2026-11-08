@@ -5,7 +5,7 @@ public sealed partial class MainForm
     private async Task InitializeAsync()
     {
         bool closeAfterSetup = false;
-        bool initialized = await RunOperationAsync("Loading central storage", async cancellationToken =>
+        await RunOperationAsync("Loading central storage", async cancellationToken =>
         {
             await Task.Run(storage.Open, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -42,10 +42,6 @@ public sealed partial class MainForm
         if (closeAfterSetup && !IsDisposed)
         {
             Close();
-        }
-        else if (initialized)
-        {
-            CheckRuntimeUpdatesOnStartup();
         }
     }
 

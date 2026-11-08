@@ -47,7 +47,6 @@ public sealed partial class MainForm
     private CancellationTokenSource? runtimeUpdateCancellation;
     private Version? latestRuntimeVersion;
     private RuntimeUpdateState runtimeUpdateState;
-    private bool runtimeStartupCheckStarted;
 
     private enum RuntimeUpdateState
     {
@@ -87,20 +86,6 @@ public sealed partial class MainForm
         };
         runtimeUpdateLabel.MouseLeave += (_, _) => runtimeUpdateLabel.BackColor = Color.Transparent;
         FormClosing += (_, _) => runtimeUpdateCancellation?.Cancel();
-    }
-
-    private void CheckRuntimeUpdatesOnStartup()
-    {
-        if (runtimeStartupCheckStarted || storage.State == null || presentation == null
-            || !ReferenceEquals(presentation.State, storage.State)
-            || storageLoadFailed || storageControlsLocked || operationCancellation != null
-            || runtimeUpdateCancellation != null || closeAfterOperation || IsDisposed || Disposing)
-        {
-            return;
-        }
-
-        runtimeStartupCheckStarted = true;
-        _ = CheckRuntimeUpdatesAsync();
     }
 
     private async Task CheckRuntimeUpdatesAsync()
