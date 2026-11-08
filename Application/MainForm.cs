@@ -74,7 +74,7 @@ public sealed partial class MainForm : Form
         AutoSize = true,
         Anchor = AnchorStyles.Left,
         AccessibleName = "Installed ReShade",
-        Margin = new Padding(16, 0, 16, 0)
+        Margin = new Padding(3, 0, 16, 0)
     };
 
     private readonly DarkComboBox vulkanBuildSelector = new()
@@ -161,7 +161,7 @@ public sealed partial class MainForm : Form
         var footer = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 4,
+            ColumnCount = 6,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Margin = new Padding(0, 12, 0, 0)
@@ -170,10 +170,13 @@ public sealed partial class MainForm : Form
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         statusLabel.Margin = Padding.Empty;
         footer.Controls.Add(statusLabel, 0, 0);
-        footer.Controls.Add(runtimeStatusLabel, 1, 0);
-        footer.Controls.Add(cancelButton, 2, 0);
+        BuildRuntimeUpdateNotice(footer);
+        footer.Controls.Add(runtimeStatusLabel, 2, 0);
+        footer.Controls.Add(cancelButton, 3, 0);
 
         var helpButton = new FlatButton("?")
         {
@@ -186,7 +189,8 @@ public sealed partial class MainForm : Form
             AccessibleDescription = "Open the user guide. Shortcut: F1."
         };
         helpButton.Click += (_, _) => ShowHelp();
-        footer.Controls.Add(helpButton, 3, 0);
+        footer.Controls.Add(runtimeUpdateButton, 4, 0);
+        footer.Controls.Add(helpButton, 5, 0);
 
         HelpRequested += (_, e) =>
         {

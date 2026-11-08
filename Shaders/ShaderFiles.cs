@@ -38,7 +38,10 @@ public static class ShaderFiles
         }
     }
 
-    public static void CheckUnmodified(InstalledPackage package, CentralPaths paths)
+    public static void CheckUnmodified(
+        InstalledPackage package,
+        CentralPaths paths,
+        CancellationToken cancellationToken = default)
     {
         var actual = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach ((string? kind, string? root) in new[]
@@ -55,9 +58,10 @@ public static class ShaderFiles
 
             foreach (string path in EnumerateFiles(directory))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string key = kind + "/" + Path.GetRelativePath(directory, path).Replace('\\', '/');
                 actual.Add(key);
-                if (!package.Files.TryGetValue(key, out string? hash) || LocalFiles.Hash(path) != hash)
+                if (!package.Files.TryGetValue(key, out string? hash) || LocalFiles.Hash(path, cancellationToken) != hash)
                 {
                     throw new IOException($"Local changes were found in {path}. Restore the original files, " +
                         "or use Shader packages > Purge shader folder to reinstall all central shader packages.");
@@ -139,7 +143,7 @@ public static class ShaderFiles
         InstalledPackage? previous = state.Packages.SingleOrDefault(packageItem => packageItem.Id == package.Id);
         if (previous != null)
         {
-            CheckUnmodified(previous, state.Paths);
+            CheckUnmodified(previous, state.Paths, cancellationToken);
         }
 
         string shaderTarget = PackageDirectory(state.Paths.Shaders, package.Id);
@@ -195,8 +199,8 @@ public static class ShaderFiles
 
                 string relative = Path.GetRelativePath(source, file);
                 string destination = LocalFiles.Contained(target, relative);
-                transaction.Copy(file, destination);
-                installed.Files[kind + "/" + relative.Replace('\\', '/')] = LocalFiles.Hash(destination);
+                string key = kind + "/" + relative.Replace('\\', '/');
+                CopyPackageFile(file, destination, key, previous, installed, transaction, cancellationToken);
             }
         }
 
@@ -206,8 +210,7 @@ public static class ShaderFiles
             cancellationToken.ThrowIfCancellationRequested();
             string relative = "_notices/" + Path.GetRelativePath(extracted, notice).Replace('\\', '/');
             string destination = LocalFiles.Contained(shaderTarget, relative);
-            transaction.Copy(notice, destination);
-            installed.Files["shaders/" + relative] = LocalFiles.Hash(destination);
+            CopyPackageFile(notice, destination, "shaders/" + relative, previous, installed, transaction, cancellationToken);
         }
 
         if (previous != null)
@@ -217,13 +220,42 @@ public static class ShaderFiles
                 cancellationToken.ThrowIfCancellationRequested();
                 int slash = file.IndexOf('/');
                 string root = file[..slash] == "shaders" ? shaderTarget : textureTarget;
-                transaction.Delete(LocalFiles.Contained(root, file[(slash + 1)..]));
+                string target = LocalFiles.Contained(root, file[(slash + 1)..]);
+                if (!transaction.DeleteIfUnchanged(target, expectedHash: previous.Files[file]))
+                {
+                    throw new IOException("A shader file changed while it was being updated: " + target);
+                }
             }
         }
 
         state.Packages.RemoveAll(packageItem => packageItem.Id == package.Id);
         state.Packages.Add(installed);
         return installed;
+    }
+
+    private static void CopyPackageFile(
+        string source,
+        string destination,
+        string key,
+        InstalledPackage? previous,
+        InstalledPackage installed,
+        FileTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (installed.Files.ContainsKey(key))
+        {
+            throw new InvalidDataException("Multiple package files target the same shader path: " + destination);
+        }
+
+        string? expected = previous != null && previous.Files.TryGetValue(key, out string? hash) ? hash : null;
+        string sourceHash = LocalFiles.Hash(source, cancellationToken);
+        if (!transaction.CopyIfUnchanged(source, destination, expected, cancellationToken)
+            || !string.Equals(LocalFiles.Hash(destination, cancellationToken), sourceHash, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new IOException("A shader file changed while it was being updated: " + destination);
+        }
+
+        installed.Files[key] = sourceHash;
     }
 
     private static bool IsNotice(string path)

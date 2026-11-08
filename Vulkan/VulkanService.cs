@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace ReShadeCentralized;
@@ -247,10 +248,15 @@ public sealed partial class VulkanService(ILayerRegistry registry)
         FileTransaction transaction,
         bool enroll = true)
     {
+        if (!enroll && state.OwnedVulkanApps.Count == 0)
+        {
+            return;
+        }
+
         var desired = new List<VulkanAppEntry>();
+        List<RegisteredLayer> layers = RegisteredLayers();
         if (enroll)
         {
-            List<RegisteredLayer> layers = RegisteredLayers();
             foreach (GameProfile game in state.Games.Where(game =>
                 game.Api == RenderApi.Vulkan))
             {
@@ -280,7 +286,21 @@ public sealed partial class VulkanService(ILayerRegistry registry)
 
         foreach (string path in paths)
         {
-            var document = IniDocument.Read(path);
+            if (!layers.Any(layer => SameUnregisterPath(path, AppsPath(layer))))
+            {
+                throw new IOException("Cannot verify the registered Vulkan application list; preserving it: " + path);
+            }
+
+            LocalFiles.CheckParents(path);
+            if (LocalFiles.Link(path) != null || Directory.Exists(path))
+            {
+                throw new IOException("Application list is not a regular file: " + path);
+            }
+
+            bool exists = File.Exists(path);
+            byte[] contents = exists ? ConfigurationService.ReadConfigurationBytes(path) : [];
+            string? hash = exists ? Convert.ToHexString(SHA256.HashData(contents)) : null;
+            var document = new IniDocument(ConfigurationService.ReadConfigurationText(contents));
             string[] original = IniDocument.Split(document.Get("", "Apps"));
             var applications = original.ToList();
 
@@ -309,13 +329,14 @@ public sealed partial class VulkanService(ILayerRegistry registry)
 
             if (!original.SequenceEqual(applications))
             {
-                if (LocalFiles.Link(path) != null)
-                {
-                    throw new IOException("Application list is an unmanaged symbolic link: " + path);
-                }
-
                 document.Set("", "Apps", IniDocument.Join(applications));
-                transaction.WriteText(path, document.ToString());
+                bool written = hash != null
+                    ? transaction.RewriteIfUnchanged(path, hash, document.ToString())
+                    : transaction.WriteTextIfAbsent(path, document.ToString());
+                if (!written)
+                {
+                    throw new IOException("Vulkan application list changed during the operation; preserving it: " + path);
+                }
             }
         }
 

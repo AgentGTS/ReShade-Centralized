@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace ReShadeCentralized;
 
 public static class ConfigurationService
@@ -87,8 +89,20 @@ public static class ConfigurationService
         string? initialText = null,
         IReadOnlyList<string>? removedSearchRoots = null)
     {
+        if (!Path.IsPathFullyQualified(game.Directory))
+        {
+            throw new InvalidDataException("The game profile must be inside central storage.");
+        }
+        LocalFiles.Contained(state.Paths.Profiles, Path.GetRelativePath(state.Paths.Profiles, game.Directory));
         string path = ConfigPath(game);
-        IniDocument document = initialText == null ? IniDocument.Read(path) : new IniDocument(initialText);
+        CheckProfileFile(path);
+        string preset = Path.Combine(game.Directory, "ReShadePreset.ini");
+        CheckProfileFile(preset);
+        byte[]? original = File.Exists(path) ? ReadConfigurationBytes(path) : null;
+        string? expectedHash = original == null ? null : Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(original));
+        string text = original == null ? "" : ReadConfigurationText(original);
+        IniDocument document = new(initialText ?? text);
         string originalBase = CompatibilityCatalog.Default.InstallationDirectory(game.Executable, game.Api);
         string? baseOverride = IniDocument.Split(document.Get("INSTALL", "BasePath")).FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(baseOverride))
@@ -133,10 +147,12 @@ public static class ConfigurationService
                 SearchPaths(state, textures).Concat(LocalSearchPaths(game, textures))));
         }
         document.Set("GENERAL", "IntermediateCachePath", IniDocument.Join([Path.Combine(game.Directory, "Cache")]));
-        string preset = Path.Combine(game.Directory, "ReShadePreset.ini");
         if (!File.Exists(preset))
         {
-            transaction.WriteText(preset, "PreprocessorDefinitions=\nTechniques=\nTechniqueSorting=\n");
+            if (!transaction.WriteTextIfAbsent(preset, "PreprocessorDefinitions=\nTechniques=\nTechniqueSorting=\n"))
+            {
+                throw new IOException("The default preset appeared during this operation; it was preserved: " + preset);
+            }
         }
 
         string? selectedPreset = document.Get("GENERAL", "PresetPath");
@@ -146,15 +162,100 @@ public static class ConfigurationService
             document.Set("GENERAL", "PresetPath", IniDocument.Join([preset]));
         }
 
-        string screenshots = Path.Combine(state.Paths.Screenshots, game.Id);
-        Directory.CreateDirectory(Path.Combine(game.Directory, "Cache"));
+        string screenshots = LocalFiles.Contained(state.Paths.Screenshots, game.Id);
+        string cache = Path.Combine(game.Directory, "Cache");
+        LocalFiles.CheckParents(Path.Combine(cache, "check"));
+        LocalFiles.CheckParents(Path.Combine(screenshots, "check"));
+        Directory.CreateDirectory(cache);
         Directory.CreateDirectory(screenshots);
         document.Set("SCREENSHOT", "SavePath", IniDocument.Join([screenshots]));
         document.SetDefault("INPUT", "KeyOverlay", "36,0,0,0");
         document.SetDefault("GENERAL", "PerformanceMode", "0");
         document.SetDefault("GENERAL", "PresetTransitionDuration", "1000");
         CompatibilityCatalog.Default.ApplyDefaults(document, game.Executable);
-        transaction.WriteText(path, document.ToString());
+        bool saved = expectedHash == null
+            ? transaction.WriteTextIfAbsent(path, document.ToString())
+            : transaction.RewriteIfUnchanged(path, expectedHash, document.ToString());
+        if (!saved)
+        {
+            throw new IOException("The profile configuration changed during this operation; it was preserved: " + path);
+        }
+    }
+
+    internal static byte[] ReadConfigurationBytes(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length > 16 * 1024 * 1024)
+        {
+            throw new InvalidDataException("The configuration is too large; it was preserved: " + path);
+        }
+        byte[] bytes = new byte[checked((int)stream.Length)];
+        stream.ReadExactly(bytes);
+        if (stream.ReadByte() != -1)
+        {
+            throw new IOException("The configuration changed while it was being read: " + path);
+        }
+        return bytes;
+    }
+
+    internal static string ReadConfigurationText(byte[] bytes)
+    {
+        ReadOnlySpan<byte> content = bytes;
+        Encoding encoding = new UTF8Encoding(false, true);
+        int offset = 0;
+        if (content.StartsWith(new byte[] { 0xff, 0xfe, 0x00, 0x00 }))
+        {
+            encoding = new UTF32Encoding(false, false, true);
+            offset = 4;
+        }
+        else if (content.StartsWith(new byte[] { 0x00, 0x00, 0xfe, 0xff }))
+        {
+            encoding = new UTF32Encoding(true, false, true);
+            offset = 4;
+        }
+        else if (content.StartsWith(new byte[] { 0xef, 0xbb, 0xbf }))
+        {
+            offset = 3;
+        }
+        else if (content.StartsWith(new byte[] { 0xff, 0xfe }))
+        {
+            encoding = new UnicodeEncoding(false, false, true);
+            offset = 2;
+        }
+        else if (content.StartsWith(new byte[] { 0xfe, 0xff }))
+        {
+            encoding = new UnicodeEncoding(true, false, true);
+            offset = 2;
+        }
+
+        try
+        {
+            string text = encoding.GetString(content[offset..]);
+            if (text.Contains('\0'))
+            {
+                throw new InvalidDataException("The configuration contains binary data; it was preserved.");
+            }
+            return text;
+        }
+        catch (DecoderFallbackException error)
+        {
+            throw new InvalidDataException("The configuration text encoding is invalid; it was preserved.", error);
+        }
+    }
+
+    private static void CheckProfileFile(string path)
+    {
+        LocalFiles.CheckParents(path);
+        try
+        {
+            if ((File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+            {
+                throw new IOException("A profile configuration or default preset must be a regular file: " + path);
+            }
+        }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException)
+        {
+        }
     }
 
     private static string ResolvePath(string path, string directory) =>

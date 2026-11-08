@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using static ReShadeCentralized.GameFiles;
 
 namespace ReShadeCentralized;
@@ -6,25 +7,25 @@ public static class GameDeployment
 {
     private static void Link(
         GameProfile game,
-        string path,
-        string target,
-        FileTransaction transaction,
-        bool adoptConfig = false)
+        InstallationLink link,
+        FileTransaction transaction)
     {
-        OwnedLink? prior = game.Links.SingleOrDefault(link => LocalFiles.Same(link.Path, path));
-        if (prior != null && LocalFiles.Exists(path) && !IsOwnedLink(prior) && !CanReplaceReShadeLink(path))
+        string? expectedTarget = link.ExpectedOwnedTarget;
+        if (expectedTarget == null && link.PreviousTarget != null)
         {
-            throw new IOException("Managed link was replaced externally; preserving it: " + path);
+            expectedTarget = Path.GetFullPath(link.PreviousTarget, Path.GetDirectoryName(link.Path)!);
         }
 
-        if (prior == null && LocalFiles.Exists(path) && !adoptConfig && !IsReShadeHook(path))
+        string? expectedHash = link.Previous?.Hash;
+        if ((expectedTarget != null || expectedHash != null)
+            && !transaction.DeleteIfUnchanged(link.Path, expectedTarget, expectedHash))
         {
-            throw new IOException("Refusing to replace an unrelated file: " + path);
+            throw new IOException("A reviewed game file changed; preserving it: " + link.Path);
         }
 
-        transaction.Symlink(path, target);
-        game.Links.RemoveAll(link => LocalFiles.Same(link.Path, path));
-        game.Links.Add(new(path, target));
+        transaction.SymlinkIfAbsent(link.Path, link.Target);
+        game.Links.RemoveAll(owned => LocalFiles.Same(owned.Path, link.Path));
+        game.Links.Add(new(link.Path, link.Target));
     }
 
     public static void Install(
@@ -32,13 +33,14 @@ public static class GameDeployment
         GameProfile game,
         FileTransaction transaction,
         InstallationPlan? reviewedPlan = null,
-        bool replaceExisting = false)
+        bool replaceExisting = false,
+        GameProfile? previous = null)
     {
+        ValidateRecordedLinks(state, previous ?? game);
         InstallationPlan plan = InstallationPlanner.CreatePlan(state, game);
         InstallationPlanner.ValidatePlan(plan, reviewedPlan, replaceExisting);
         game.Executable = plan.Executable!;
         game.Architecture = CompatibilityCatalog.Default.Architecture(game.Executable, game.Api);
-        string gameDirectory = CompatibilityCatalog.Default.InstallationDirectory(game.Executable, game.Api);
         string stem = game.Architecture == CpuArchitecture.X64 ? "ReShade64" : "ReShade32";
         string dll = Path.Combine(state.Paths.Binaries(game.Build), stem + ".dll");
         if (!PortableExecutable.IsReShade(dll) || PortableExecutable.Architecture(dll) != game.Architecture)
@@ -48,13 +50,30 @@ public static class GameDeployment
                 "Open Runtime & storage > Update ReShade, then retry Games > Install game or Repair / edit.");
         }
 
-        string? proxy = CompatibilityCatalog.Default.Proxy(game.Executable, game.Api);
-        string centralConfig = ConfigurationService.ConfigPath(game);
-        string? initial = plan.ConfigurationSource != null ?
-            ReadAdoptedConfiguration(plan.ConfigurationSource).ToString() : null;
+        string? initial = null;
+        if (plan.ConfigurationSource != null)
+        {
+            byte[] configuration = ConfigurationService.ReadConfigurationBytes(plan.ConfigurationSource);
+            if (Convert.ToHexString(SHA256.HashData(configuration)) != plan.ConfigurationSourceHash)
+            {
+                throw new IOException("The selected configuration changed; review installation again.");
+            }
+
+            initial = ReadAdoptedConfiguration(plan.ConfigurationSource, configuration).ToString();
+        }
         if (initial != null && plan.PresetSource != null)
         {
-            transaction.Copy(plan.PresetSource, Path.Combine(game.Directory, "ReShadePreset.ini"));
+            byte[] preset = ConfigurationService.ReadConfigurationBytes(plan.PresetSource);
+            if (Convert.ToHexString(SHA256.HashData(preset)) != plan.PresetSourceHash)
+            {
+                throw new IOException("The selected preset changed; review installation again.");
+            }
+
+            if (!transaction.WriteBytesIfAbsent(Path.Combine(game.Directory, "ReShadePreset.ini"), preset))
+            {
+                throw new IOException("The profile already has a preset; preserving it. " +
+                    "Review the existing profile before importing another preset.");
+            }
         }
 
         ConfigurationService.Update(state, game, transaction, initial);
@@ -65,23 +84,46 @@ public static class GameDeployment
                 continue;
             }
 
-            if (LocalFiles.Exists(old.Path) && !IsOwnedLink(old))
+            if ((LocalFiles.Exists(old.Path) || Directory.Exists(old.Path))
+                && !transaction.DeleteIfUnchanged(old.Path, expectedTarget: old.Target))
             {
                 throw new IOException("Cannot remove a replaced managed link: " + old.Path);
             }
 
-            transaction.Delete(old.Path);
             game.Links.Remove(old);
         }
 
-        if (proxy != null)
+        foreach (InstallationLink link in plan.Links)
         {
-            Link(game, Path.Combine(gameDirectory, proxy), dll, transaction);
+            Link(game, link, transaction);
+        }
+    }
+
+    internal static void ValidateRecordedLinks(ManagerState state, GameProfile game)
+    {
+        if (game.Links.Count == 0)
+        {
+            return;
         }
 
-        foreach (string config in ConfigurationPaths(game.Executable, game.Api))
+        if (!Path.IsPathFullyQualified(game.Executable) || !Path.IsPathFullyQualified(game.Directory)
+            || !Enum.IsDefined(game.Api) || !Enum.IsDefined(game.Build) || !Enum.IsDefined(game.Architecture))
         {
-            Link(game, config, centralConfig, transaction, true);
+            throw new InvalidDataException("Cannot verify the game's recorded installation links.");
+        }
+
+        List<OwnedLink> expected = GameRemoval.ExpectedLinks(state, game);
+        foreach (OwnedLink link in game.Links)
+        {
+            bool allowed = Path.IsPathFullyQualified(link.Path) && Path.IsPathFullyQualified(link.Target)
+                && expected.Any(item => LocalFiles.Same(item.Path, link.Path)
+                    && LocalFiles.Same(item.Target, link.Target));
+            bool shared = state.Games.Any(other => other.Id != game.Id
+                && other.Links.Any(item => LocalFiles.Same(item.Path, link.Path)));
+            if (!allowed || shared)
+            {
+                throw new IOException("Cannot verify ownership of a recorded game link; preserving it: " + link.Path);
+            }
         }
     }
 

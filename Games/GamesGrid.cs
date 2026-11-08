@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace ReShadeCentralized;
 
 internal sealed class GamesGrid : DataGridView
@@ -76,6 +78,11 @@ internal sealed class GamesGrid : DataGridView
 
     protected override void OnDataBindingComplete(DataGridViewBindingCompleteEventArgs e)
     {
+        if (e.ListChangedType == ListChangedType.Reset)
+        {
+            ClearSelection();
+        }
+
         base.OnDataBindingComplete(e);
         foreach (DataGridViewRow row in Rows)
         {

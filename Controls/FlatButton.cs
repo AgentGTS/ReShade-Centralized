@@ -1,6 +1,6 @@
 namespace ReShadeCentralized;
 
-internal sealed class FlatButton : Button
+internal class FlatButton : Button
 {
     private readonly bool primary;
     private bool hovered;

@@ -5,7 +5,7 @@ public sealed partial class MainForm
     private async Task InitializeAsync()
     {
         bool closeAfterSetup = false;
-        await RunOperationAsync("Loading central storage", async cancellationToken =>
+        bool initialized = await RunOperationAsync("Loading central storage", async cancellationToken =>
         {
             await Task.Run(storage.Open, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -16,7 +16,7 @@ public sealed partial class MainForm
                 if (setup.ShowDialog(this) != DialogResult.OK)
                 {
                     closeAfterSetup = true;
-                    throw new OperationCanceledException();
+                    throw new OperationCanceledException(cancellationToken);
                 }
 
                 await storage.InitializeAsync(setup.CentralRoot, cancellationToken);
@@ -42,6 +42,10 @@ public sealed partial class MainForm
         if (closeAfterSetup && !IsDisposed)
         {
             Close();
+        }
+        else if (initialized)
+        {
+            CheckRuntimeUpdatesOnStartup();
         }
     }
 
@@ -107,7 +111,8 @@ public sealed partial class MainForm
 
             return true;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException error) when (currentOperation.IsCancellationRequested
+            || error.CancellationToken == currentOperation.Token || IsDisposed || Disposing || closeAfterOperation)
         {
             result = OperationResult.Cancelled;
             WriteLog("Cancelled. Completed work was kept; unfinished changes were rolled back.");

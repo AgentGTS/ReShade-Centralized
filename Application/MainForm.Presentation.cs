@@ -45,13 +45,15 @@ public sealed partial class MainForm
     private static List<GameDisplayRow> PrepareGames(
         ManagerState? state,
         CancellationToken cancellationToken,
-        IProgress<StorageLoadProgress>? progress)
+        IProgress<StorageLoadProgress>? progress,
+        IReadOnlyList<ShaderPackage> packages)
     {
         var reportWatch = Stopwatch.StartNew();
         int gameCount = state?.Games.Count ?? 0;
         var games = new List<GameDisplayRow>(gameCount);
         progress?.Report(new("Checking games", 0, gameCount));
         IReadOnlySet<string> installedEffects = new HashSet<string>();
+        IReadOnlyDictionary<string, string> packageSources = new Dictionary<string, string>();
         string? shaderInspectionError = null;
 
         if (gameCount > 0)
@@ -59,6 +61,7 @@ public sealed partial class MainForm
             try
             {
                 installedEffects = PresetShaderCheck.InstalledEffects(state!, cancellationToken);
+                packageSources = PresetShaderCheck.PackageSources(state!, packages, cancellationToken);
             }
             catch (Exception error) when (
                 error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or
@@ -74,7 +77,8 @@ public sealed partial class MainForm
             games.Add(new(
                 game.Id,
                 InstallationInspection.GetInstallationWarning(game),
-                shaderInspectionError ?? PresetShaderCheck.GetWarning(game, installedEffects),
+                shaderInspectionError ?? PresetShaderCheck.GetWarning(
+                    game, installedEffects, packageSources, cancellationToken),
                 Path.GetFileName(game.Executable),
                 game.Api == RenderApi.DXGI ? "DXGI" : DisplayNames.For(game.Api),
                 game.Build == RuntimeBuild.FullAddon ? "Standard + add-on" : DisplayNames.For(game.Build),
@@ -91,10 +95,13 @@ public sealed partial class MainForm
         return games;
     }
 
-    private ViewPresentation PrepareView(CancellationToken cancellationToken, IProgress<StorageLoadProgress>? progress)
+    private ViewPresentation PrepareView(
+        CancellationToken cancellationToken,
+        IProgress<StorageLoadProgress>? progress,
+        IReadOnlyList<ShaderPackage> packages)
     {
         ManagerState? state = storage.State;
-        List<GameDisplayRow> games = PrepareGames(state, cancellationToken, progress);
+        List<GameDisplayRow> games = PrepareGames(state, cancellationToken, progress, packages);
         var reportWatch = Stopwatch.StartNew();
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -132,15 +139,18 @@ public sealed partial class MainForm
         gameWarningRefreshCancellation?.Cancel();
         using var cancellation = new CancellationTokenSource();
         gameWarningRefreshCancellation = cancellation;
+        List<ShaderPackage> currentCatalog = catalog;
 
         try
         {
             List<GameDisplayRow> checkedGames = await Task.Run(
-                () => PrepareGames(current.State, cancellation.Token, null),
+                () => PrepareGames(current.State, cancellation.Token, null, currentCatalog),
                 cancellation.Token);
 
             if (cancellation.IsCancellationRequested || IsDisposed || Disposing || closeAfterOperation
-                || operationCancellation != null || !ReferenceEquals(presentation, current))
+                || operationCancellation != null
+                || !ReferenceEquals(presentation, current)
+                || !ReferenceEquals(catalog, currentCatalog))
             {
                 return;
             }
@@ -175,7 +185,10 @@ public sealed partial class MainForm
         CancellationToken cancellationToken,
         IProgress<StorageLoadProgress>? progress = null)
     {
-        ViewPresentation prepared = await Task.Run(() => PrepareView(cancellationToken, progress), cancellationToken);
+        List<ShaderPackage> currentCatalog = catalog;
+        ViewPresentation prepared = await Task.Run(
+            () => PrepareView(cancellationToken, progress, currentCatalog),
+            cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!IsDisposed && !Disposing)
@@ -186,7 +199,7 @@ public sealed partial class MainForm
         }
     }
 
-    private void RefreshView() => ApplyView(PrepareView(CancellationToken.None, null));
+    private void RefreshView() => ApplyView(PrepareView(CancellationToken.None, null, catalog));
 
     private void ApplyView(ViewPresentation prepared)
     {
@@ -195,10 +208,9 @@ public sealed partial class MainForm
         Dictionary<RuntimeBuild, string> runtimeVersions = prepared.RuntimeVersions;
         versionsLabel.Text = string.Join("   \u2022   ",
             runtimeVersions.Select(item => $"{DisplayNames.For(item.Key)}: {item.Value}"));
-        runtimeStatusLabel.Text = runtimeVersions.Values.All(version => version == "Not installed")
-            ? "ReShade: Not installed"
-            : $"ReShade: {runtimeVersions[RuntimeBuild.Standard]}   |   " +
-                $"Add-on support: {runtimeVersions[RuntimeBuild.FullAddon]}";
+        runtimeStatusLabel.Text = $"Standard: {runtimeVersions[RuntimeBuild.Standard]}   |   " +
+            $"Add-on: {runtimeVersions[RuntimeBuild.FullAddon]}";
+        RefreshRuntimeUpdateNotice();
         gamesGrid.DataSource = prepared.Games;
         storageLabel.Text = state?.Paths.Root ?? "Not configured";
 

@@ -54,6 +54,7 @@ public sealed class ShaderCatalog(Downloads downloads, StateStore store)
                 Description = document.Get(section, "PackageDescription") ?? "",
                 Required = document.Get(section, "Required") == "1",
                 Enabled = document.Get(section, "Enabled") == "1",
+                EffectFiles = IniDocument.Split(document.Get(section, "EffectFiles")),
                 DeniedEffects = IniDocument.Split(document.Get(section, "DenyEffectFiles"))
             });
         }

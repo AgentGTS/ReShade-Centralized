@@ -1,11 +1,16 @@
 namespace ReShadeCentralized;
 
 public sealed record ExistingInstallationNotice(string Message, bool BlocksInstallation);
-public sealed record ExistingFile(string? LinkTarget);
+public sealed record ExistingFile(string? LinkTarget)
+{
+    public string? Hash { get; init; }
+}
+
 public sealed record InstallationLink(string Path, string Target, ExistingFile? Previous)
 {
     public bool ReplacesFile => Previous != null;
     public string? PreviousTarget => Previous?.LinkTarget;
+    public string? ExpectedOwnedTarget { get; init; }
 }
 
 public sealed record InstallationPlan(
@@ -21,6 +26,8 @@ public sealed record InstallationPlan(
     public string? Executable { get; init; }
     public string? TargetReason { get; init; }
     public string? ConfigurationSource { get; init; }
+    public string? ConfigurationSourceHash { get; init; }
+    public string? PresetSourceHash { get; init; }
     public CpuArchitecture? RuntimeArchitecture { get; init; }
 
     public bool RequiresConfirmation => Links.Any(link => link.ReplacesFile);

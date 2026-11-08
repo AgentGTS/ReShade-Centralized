@@ -11,6 +11,7 @@ public sealed class StateStore
 
     private readonly string? applicationDirectory;
     private string? selectedDirectory;
+    private string? loadedStateHash;
 
     public StateStore(string directory) : this(directory, applicationFolder: false)
     {
@@ -50,13 +51,28 @@ public sealed class StateStore
         }
 
         selectedDirectory = null;
+        loadedStateHash = null;
+
+        LocalFiles.CheckParents(PointerPath);
+        CheckRegularFile(PointerPath);
+        if (LocalFiles.Link(PointerPath) != null)
+        {
+            throw new IOException("The central storage pointer must not be a link: " + PointerPath);
+        }
 
         if (!File.Exists(PointerPath))
         {
             return;
         }
 
-        SelectDirectory(File.ReadAllText(PointerPath).Trim());
+        using var stream = new FileStream(PointerPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length > 64 * 1024)
+        {
+            throw new InvalidDataException("The central storage pointer is too large: " + PointerPath);
+        }
+        byte[] contents = new byte[checked((int)stream.Length)];
+        stream.ReadExactly(contents);
+        SelectDirectory(ConfigurationService.ReadConfigurationText(contents).Trim());
 
         if (!Directory.Exists(DirectoryPath))
         {
@@ -70,6 +86,7 @@ public sealed class StateStore
         if (directory == null)
         {
             selectedDirectory = null;
+            loadedStateHash = null;
             return;
         }
 
@@ -78,7 +95,20 @@ public sealed class StateStore
             throw new InvalidDataException("Select an absolute central storage folder path.");
         }
 
+        if (directory.StartsWith(@"\\?\", StringComparison.Ordinal)
+            || directory.StartsWith(@"\\.\", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Device paths cannot be used for central storage.");
+        }
+        string suppliedRoot = Path.GetPathRoot(directory)!;
+        LocalFiles.Contained(suppliedRoot, directory[suppliedRoot.Length..]);
         string path = Path.GetFullPath(directory);
+        string filesystemRoot = Path.GetPathRoot(path)!;
+        if (LocalFiles.Same(path, filesystemRoot))
+        {
+            throw new InvalidDataException("Choose a central storage folder below the drive or share root.");
+        }
+        LocalFiles.Contained(filesystemRoot, Path.GetRelativePath(filesystemRoot, path));
 
         if (applicationDirectory != null
             && (LocalFiles.Same(path, applicationDirectory)
@@ -92,6 +122,7 @@ public sealed class StateStore
 
         LocalFiles.CheckParents(Path.Combine(path, "ReShadeCentralized.json"));
         selectedDirectory = path;
+        loadedStateHash = null;
     }
 
     internal void RememberSelection()
@@ -102,15 +133,40 @@ public sealed class StateStore
         }
 
         LocalFiles.CheckParents(PointerPath);
+        CheckRegularFile(PointerPath);
 
-        if (LocalFiles.Link(PointerPath) != null || LocalFiles.Link(PointerPath + ".tmp") != null)
+        if (LocalFiles.Link(PointerPath) != null)
         {
             throw new IOException("The central storage pointer must not be a link: " + PointerPath);
         }
 
         Directory.CreateDirectory(applicationDirectory!);
-        File.WriteAllText(PointerPath + ".tmp", DirectoryPath);
-        File.Move(PointerPath + ".tmp", PointerPath, true);
+        string temporary = PointerPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(stream))
+            {
+                writer.Write(DirectoryPath);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+            LocalFiles.CheckParents(PointerPath);
+            CheckRegularFile(PointerPath);
+            if (LocalFiles.Link(PointerPath) != null)
+            {
+                throw new IOException("The central storage pointer must not be a link: " + PointerPath);
+            }
+            LocalFiles.AtomicMove(temporary, PointerPath);
+        }
+        finally
+        {
+            LocalFiles.CheckParents(temporary);
+            if (File.Exists(temporary))
+            {
+                File.Delete(temporary);
+            }
+        }
     }
 
     public ManagerState? Load() => Load(out _);
@@ -125,10 +181,10 @@ public sealed class StateStore
         }
         catch (Exception error) when (error is InvalidDataException or JsonException)
         {
-            throw new InvalidDataException(error.Message + "\n\nTo reuse the default location for a fresh setup, " +
-                "unregister affected games first, then delete the central storage folder at:\n" + DefaultDirectory +
-                "\nSelect this path in Setup; it will be recreated. Deleting storage removes its settings, " +
-                "presets, shaders and runtimes.", error);
+            throw new InvalidDataException(error.Message + "\n\nExisting files were kept at:\n" + DirectoryPath +
+                "\nBack up this folder, including Recovery-v2, before repairing its settings. " +
+                "Restore a valid ReShadeCentralized.json from your backup or choose a new empty folder " +
+                "for a fresh setup. Keep the existing storage while registered games still use it.", error);
         }
     }
 
@@ -138,6 +194,7 @@ public sealed class StateStore
 
         if (!IsSelected || !LocalFiles.Exists(StatePath))
         {
+            loadedStateHash = null;
             return null;
         }
 
@@ -146,7 +203,17 @@ public sealed class StateStore
             throw new InvalidDataException("Central storage state must not be a link: " + StatePath);
         }
 
-        ManagerState state = StateMigration.Read(File.ReadAllText(StatePath), DirectoryPath, out repairs);
+        CheckRegularFile(StatePath);
+
+        using var stream = new FileStream(StatePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length > 64 * 1024 * 1024)
+        {
+            throw new InvalidDataException("Central storage settings exceed the 64 MB safety limit.");
+        }
+        byte[] bytes = new byte[checked((int)stream.Length)];
+        stream.ReadExactly(bytes);
+        ManagerState state = StateMigration.Read(
+            ConfigurationService.ReadConfigurationText(bytes), DirectoryPath, out repairs);
 
         if (state.VulkanLayerDirectory != null
             && !LocalFiles.Same(state.VulkanLayerDirectory, Path.Combine(DirectoryPath, "Vulkan")))
@@ -155,13 +222,42 @@ public sealed class StateStore
                 "central storage. Unregister games with the previous build before setting up again.");
         }
 
+        loadedStateHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
         return state;
     }
 
-    public void Save(
+    public string Save(
         ManagerState state,
-        FileTransaction transaction) =>
-        transaction.WriteText(
-            StatePath,
-            JsonSerializer.Serialize(state, ManagerState.Json));
+        FileTransaction transaction)
+    {
+        LocalFiles.CheckParents(StatePath);
+        CheckRegularFile(StatePath);
+        if (LocalFiles.Link(StatePath) != null)
+        {
+            throw new IOException("Central storage state must not be a link: " + StatePath);
+        }
+        string text = JsonSerializer.Serialize(state, ManagerState.Json);
+        if (!transaction.WriteTextIfUnchanged(StatePath, loadedStateHash, text))
+        {
+            throw new IOException("Central storage settings changed outside the app. They were preserved. " +
+                "Back up the settings and restart the app before retrying: " + StatePath);
+        }
+        return LocalFiles.HashText(text);
+    }
+
+    internal void AcceptSavedState(string hash) => loadedStateHash = hash;
+
+    private static void CheckRegularFile(string path)
+    {
+        try
+        {
+            if ((File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+            {
+                throw new IOException("A storage settings or pointer file must be a regular file: " + path);
+            }
+        }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException)
+        {
+        }
+    }
 }

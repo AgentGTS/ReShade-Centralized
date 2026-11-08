@@ -122,6 +122,20 @@ public sealed partial class MainForm
             packages.Where(package => selectedPackageIds.Contains(package.Id)).ToArray(),
             packages);
 
+        if (plan.Removals.Count > 0 && MessageBox.Show(
+            this,
+            "Remove these shader packages and all files inside their central shader and texture folders, " +
+            "including custom or modified files?\n\n" +
+            string.Join("\n", plan.Removals.Select(package => package.Name)) +
+            "\n\nClose affected games first. Presets and game-local shaders will be kept.",
+            "Remove shader packages",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+        {
+            return;
+        }
+
         try
         {
             await RunOperationAsync("Applying shader selection", async cancellationToken =>

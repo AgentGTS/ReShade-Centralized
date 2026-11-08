@@ -35,7 +35,9 @@ public static class GameFiles
         string rootConfig = Path.Combine(Path.GetDirectoryName(executable)!, "ReShade.ini");
         if (HasFileTarget(rootConfig))
         {
-            string? basePath = IniDocument.Split(IniDocument.Read(rootConfig).Get("INSTALL", "BasePath"))
+            var rootDocument = new IniDocument(ConfigurationService.ReadConfigurationText(
+                ConfigurationService.ReadConfigurationBytes(rootConfig)));
+            string? basePath = IniDocument.Split(rootDocument.Get("INSTALL", "BasePath"))
                 .FirstOrDefault();
             if (!string.IsNullOrWhiteSpace(basePath))
             {
@@ -51,9 +53,10 @@ public static class GameFiles
         return HasFileTarget(config) ? config : HasFileTarget(rootConfig) ? rootConfig : null;
     }
 
-    internal static IniDocument ReadAdoptedConfiguration(string source)
+    internal static IniDocument ReadAdoptedConfiguration(string source, byte[]? contents = null)
     {
-        IniDocument document = IniDocument.Read(source);
+        contents ??= ConfigurationService.ReadConfigurationBytes(source);
+        var document = new IniDocument(ConfigurationService.ReadConfigurationText(contents));
         document.SetDefault("INSTALL", "BasePath", IniDocument.Join([Path.GetDirectoryName(source)!]));
         return document;
     }

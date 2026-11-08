@@ -11,33 +11,60 @@ public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : 
     public ManagerState RequireState() => State ??
         throw new InvalidOperationException("Choose central storage in Setup first.");
 
-    internal void ReportWarning(string message) => Warning?.Invoke(message);
+    internal void ReportWarning(string message)
+    {
+        try
+        {
+            Warning?.Invoke(message);
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Trace.TraceWarning("Could not display a storage warning: {0}. {1}", message, error.Message);
+        }
+    }
 
-    internal FileTransaction BeginTransaction(string description) =>
-        new(Store.Recovery, description, registry, ReportWarning);
+    internal FileTransaction BeginTransaction(string description)
+    {
+        TransactionRecovery.RecoverPending(Store.Recovery, registry, reportWarning: ReportWarning);
+        return new(Store.Recovery, description, registry, ReportWarning);
+    }
 
     internal void Commit(ManagerState state, FileTransaction transaction, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Store.Save(state, transaction);
+        string savedHash = Store.Save(state, transaction);
         transaction.Commit();
+        Store.AcceptSavedState(savedHash);
         State = state;
     }
 
     public void Open()
     {
-        Store.ReadSelection();
-        if (!Store.IsSelected)
+        if (!operationGate.Wait(0))
         {
-            return;
+            throw new IOException("Central storage is already in use by this app instance.");
         }
 
-        TransactionRecovery.RecoverPending(Store.Recovery, registry, reportWarning: ReportWarning);
-        State = LoadStorage();
-        if (State == null && Store.PointerPath != null)
+        try
         {
-            throw new InvalidDataException("Saved central storage has no registration state: " +
-                Store.DirectoryPath + ". Select the existing central folder in Setup.");
+            Store.ReadSelection();
+            if (!Store.IsSelected)
+            {
+                return;
+            }
+
+            using StorageLease lease = StorageLease.Acquire(Store.DirectoryPath);
+            TransactionRecovery.RecoverPending(Store.Recovery, registry, reportWarning: ReportWarning);
+            State = LoadStorage();
+            if (State == null && Store.PointerPath != null)
+            {
+                throw new InvalidDataException("Saved central storage has no registration state: " +
+                    Store.DirectoryPath + ". Select the existing central folder in Setup.");
+            }
+        }
+        finally
+        {
+            operationGate.Release();
         }
     }
 
@@ -51,9 +78,18 @@ public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : 
 
         using FileTransaction transaction = BeginTransaction("Migrate / repair central storage settings");
         cancellationToken.ThrowIfCancellationRequested();
-        Store.Save(state, transaction);
+        string backup = LocalFiles.Contained(Store.DirectoryPath,
+            Path.Combine("Backups", "settings-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" +
+                Guid.NewGuid().ToString("N") + ".json"));
+        if (!transaction.CopyIfAbsent(Store.StatePath, backup))
+        {
+            throw new IOException("Cannot preserve the original settings before migration: " + backup);
+        }
+        string savedHash = Store.Save(state, transaction);
         cancellationToken.ThrowIfCancellationRequested();
         transaction.Commit();
+        Store.AcceptSavedState(savedHash);
+        ReportWarning("Original storage settings were backed up before migration: " + backup);
         foreach (string repair in repairs)
         {
             ReportWarning(repair);
@@ -62,12 +98,17 @@ public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : 
         return state;
     }
 
-    internal async Task RunAsync(Func<Task> operation, CancellationToken cancellationToken)
+    internal async Task RunAsync(Func<Task> operation, CancellationToken cancellationToken, bool acquireLease = true)
     {
         await operationGate.WaitAsync(cancellationToken);
         try
         {
-            await Task.Run(operation, cancellationToken);
+            await Task.Run(async () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using StorageLease? lease = acquireLease ? StorageLease.Acquire(Store.DirectoryPath) : null;
+                await operation();
+            }, cancellationToken);
         }
         finally
         {
@@ -105,6 +146,7 @@ public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : 
             try
             {
                 Store.SelectDirectory(root);
+                using StorageLease lease = StorageLease.Acquire(Store.DirectoryPath);
                 TransactionRecovery.RecoverPending(Store.Recovery, registry, reportWarning: ReportWarning);
                 ManagerState? existing = LoadStorage(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -114,6 +156,7 @@ public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : 
                 }
                 else
                 {
+                    CheckNewStorage();
                     using FileTransaction transaction = BeginTransaction("Initialize central storage");
                     var updatedState = new ManagerState { Paths = CentralPaths.At(root) };
                     foreach (string path in updatedState.Paths.Directories())
@@ -142,7 +185,39 @@ public sealed class CentralStorage(StateStore store, ILayerRegistry registry) : 
             }
 
             return Task.CompletedTask;
-        }, cancellationToken);
+        }, cancellationToken, acquireLease: false);
+    }
+
+    private void CheckNewStorage()
+    {
+        string root = Store.DirectoryPath;
+        if (!Directory.Exists(root))
+        {
+            return;
+        }
+
+        CentralPaths paths = CentralPaths.At(root);
+        var allowed = paths.Directories().Append(paths.ShaderRoot).Append(Store.Recovery).Append(Store.Staging)
+            .Select(Path.GetFullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var pending = new Stack<string>();
+        pending.Push(root);
+        while (pending.TryPop(out string? directory))
+        {
+            LocalFiles.CheckParents(Path.Combine(directory, "check"));
+            foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                if (LocalFiles.Same(entry, Path.Combine(root, StorageLease.FileName)))
+                {
+                    continue;
+                }
+                if (!Directory.Exists(entry) || !allowed.Contains(Path.GetFullPath(entry)))
+                {
+                    throw new IOException("The selected folder contains files without central storage settings. " +
+                        "They were preserved. Choose an empty folder or restore ReShadeCentralized.json: " + root);
+                }
+                pending.Push(entry);
+            }
+        }
     }
 
     public void Dispose() => operationGate.Dispose();

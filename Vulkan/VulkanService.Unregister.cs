@@ -78,13 +78,13 @@ public sealed partial class VulkanService
                     continue;
                 }
 
-                byte[] contents = File.ReadAllBytes(path);
+                byte[] contents = ConfigurationService.ReadConfigurationBytes(path);
                 hash = Convert.ToHexString(SHA256.HashData(contents));
-                using var reader = new StreamReader(new MemoryStream(contents));
-                document = new IniDocument(reader.ReadToEnd());
+                document = new IniDocument(ConfigurationService.ReadConfigurationText(contents));
                 applications = IniDocument.Split(document.Get("", "Apps"));
             }
             catch (Exception error) when (error is IOException
+                or InvalidDataException
                 or UnauthorizedAccessException
                 or ArgumentException
                 or NotSupportedException

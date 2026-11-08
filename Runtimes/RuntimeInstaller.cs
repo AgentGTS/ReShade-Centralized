@@ -6,7 +6,7 @@ public sealed class RuntimeInstaller(CentralStorage storage, VulkanService vulka
     {
         return storage.ChangeAsync("Update official ReShade runtimes", async (updatedState, transaction) =>
         {
-            using var staging = new StagingDirectory(storage.Store);
+            using var staging = new StagingDirectory(storage.Store, storage.ReportWarning);
             await new RuntimeService(downloads).StageAsync(staging.Path, progress, cancellationToken);
             progress?.Report("Validating and deploying both runtime builds\u2026");
             RuntimeService.Deploy(staging.Path, updatedState, transaction, cancellationToken);
@@ -24,13 +24,15 @@ public sealed class RuntimeInstaller(CentralStorage storage, VulkanService vulka
     {
         return storage.ChangeAsync("Import official ReShade installers", (updatedState, transaction) =>
         {
-            using var staging = new StagingDirectory(storage.Store);
+            using var staging = new StagingDirectory(storage.Store, storage.ReportWarning);
             SafeArchive.ExtractInstaller(
                 standardInstaller,
-                Path.Combine(staging.Path, RuntimeBuild.Standard.ToString()));
+                Path.Combine(staging.Path, RuntimeBuild.Standard.ToString()),
+                cancellationToken);
             SafeArchive.ExtractInstaller(
                 addonInstaller,
-                Path.Combine(staging.Path, RuntimeBuild.FullAddon.ToString()));
+                Path.Combine(staging.Path, RuntimeBuild.FullAddon.ToString()),
+                cancellationToken);
             RuntimeService.Deploy(staging.Path, updatedState, transaction, cancellationToken);
             if (updatedState.VulkanManaged)
             {

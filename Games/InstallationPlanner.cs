@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using static ReShadeCentralized.GameFiles;
 
 namespace ReShadeCentralized;
@@ -10,6 +11,8 @@ public static class InstallationPlanner
         {
             throw new NotSupportedException("Select a supported graphics API and runtime build.");
         }
+        GameProfile? previous = state.Games.SingleOrDefault(item => item.Id == game.Id);
+        GameDeployment.ValidateRecordedLinks(state, previous ?? game);
         if (string.IsNullOrWhiteSpace(game.Executable) || !File.Exists(game.Executable))
         {
             throw new FileNotFoundException("The game executable is missing. " +
@@ -66,19 +69,25 @@ public static class InstallationPlanner
         }
 
         string? preset = null;
+        string? presetHash = null;
+        string? sourceHash = null;
         bool adopting = !File.Exists(centralConfig);
         string? source = adopting ? ExistingConfiguration(executable, game.Api) : null;
         if (source != null)
         {
             observations.Add("Configuration source: " + source);
             Observe(source);
+            byte[] contents = ConfigurationService.ReadConfigurationBytes(source);
+            sourceHash = Convert.ToHexString(SHA256.HashData(contents));
+            observations.Add("Configuration contents: " + sourceHash);
             preset = ConfigurationService.SelectedPreset(
-                ReadAdoptedConfiguration(source),
+                ReadAdoptedConfiguration(source, contents),
                 Path.GetDirectoryName(source)!);
             if (preset != null)
             {
                 // Opening the file here makes unreadable selections fail before replacing any game files.
-                observations.Add(preset + " preset:" + LocalFiles.Hash(preset));
+                presetHash = LocalFiles.Hash(preset);
+                observations.Add(preset + " preset:" + presetHash);
             }
         }
 
@@ -92,14 +101,16 @@ public static class InstallationPlanner
             Executable = executable,
             TargetReason = target.Reason,
             ConfigurationSource = source,
+            ConfigurationSourceHash = sourceHash,
+            PresetSourceHash = presetHash,
             RuntimeArchitecture = architecture != PortableExecutable.Architecture(executable) ? architecture : null
         };
 
         void AddLink(string path, string target)
         {
             observations.Add(path + " -> " + target);
-            bool owned = game.Links.Any(link => LocalFiles.Same(link.Path, path) && IsOwnedLink(link));
-            if (!owned && LocalFiles.Link(path) != null && !CanReplaceReShadeLink(path))
+            OwnedLink? owned = game.Links.FirstOrDefault(link => LocalFiles.Same(link.Path, path) && IsOwnedLink(link));
+            if (owned == null && LocalFiles.Link(path) != null && !CanReplaceReShadeLink(path))
             {
                 conflict = "An unmanaged symbolic link occupies this path. Resolve it before installing: " + path;
             }
@@ -109,9 +120,12 @@ public static class InstallationPlanner
                 conflict = "A directory occupies a required file path. Resolve it before installing: " + path;
             }
 
-            ExistingFile? previous = LocalFiles.Exists(path) && !owned
-                ? new(LocalFiles.Link(path)) : null;
-            links.Add(new(path, target, previous));
+            string? previousTarget = LocalFiles.Link(path);
+            ExistingFile? previous = LocalFiles.Exists(path) && owned == null
+                ? new(previousTarget) { Hash = previousTarget == null ? LocalFiles.Hash(path) : null }
+                : null;
+            observations.Add("Prior file: " + (owned?.Target ?? previousTarget ?? previous?.Hash ?? "missing"));
+            links.Add(new(path, target, previous) { ExpectedOwnedTarget = owned?.Target });
         }
 
         void Observe(string path)

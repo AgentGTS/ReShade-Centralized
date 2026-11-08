@@ -22,6 +22,7 @@ public sealed class GameLibrary(CentralStorage storage, VulkanService vulkan)
             else
             {
                 game.Directory = "";
+                game.Links = [];
             }
 
             if (PortableExecutable.GetValidatedGamePath(game.Executable) == null)
@@ -51,9 +52,9 @@ public sealed class GameLibrary(CentralStorage storage, VulkanService vulkan)
                 throw new IOException("Profile destination already exists: " + game.Directory);
             }
 
+            GameDeployment.Install(updatedState, game, transaction, reviewedPlan, replaceExisting, existing);
             updatedState.Games.RemoveAll(gameItem => gameItem.Id == game.Id);
             updatedState.Games.Add(game);
-            GameDeployment.Install(updatedState, game, transaction, reviewedPlan, replaceExisting);
             if (game.Api == RenderApi.Vulkan)
             {
                 vulkan.Enable(updatedState, transaction);
@@ -80,26 +81,6 @@ public sealed class GameLibrary(CentralStorage storage, VulkanService vulkan)
             return Task.CompletedTask;
         }, cancellationToken);
         return result!;
-    }
-
-    public Task RepairAsync(IProgress<string>? progress, CancellationToken cancellationToken)
-    {
-        return storage.ChangeAsync("Repair managed links and configuration", (updatedState, transaction) =>
-        {
-            foreach (GameProfile game in updatedState.Games)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                progress?.Report("Repairing " + game.Name);
-                GameDeployment.Install(updatedState, game, transaction);
-            }
-
-            if (updatedState.VulkanManaged)
-            {
-                vulkan.Enable(updatedState, transaction);
-            }
-
-            return Task.CompletedTask;
-        }, cancellationToken);
     }
 
 }

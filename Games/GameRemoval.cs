@@ -13,17 +13,7 @@ public static class GameRemoval
         ValidateProfile(state, game);
         var result = new UnregisterResult();
         var presets = Presets(state, game, result);
-        var expected = GameFiles.ConfigurationPaths(game.Executable, game.Api)
-            .Select(path => new OwnedLink(path, ConfigurationService.ConfigPath(game)))
-            .ToList();
-
-        if (CompatibilityCatalog.Default.Proxy(game.Executable, game.Api) is string proxy)
-        {
-            string runtime = game.Architecture == CpuArchitecture.X64 ? "ReShade64.dll" : "ReShade32.dll";
-            expected.Add(new(
-                Path.Combine(CompatibilityCatalog.Default.InstallationDirectory(game.Executable, game.Api), proxy),
-                Path.Combine(state.Paths.Binaries(game.Build), runtime)));
-        }
+        List<OwnedLink> expected = ExpectedLinks(state, game);
 
         foreach (OwnedLink link in game.Links.Concat(expected)
             .DistinctBy(link => link.Path, StringComparer.OrdinalIgnoreCase))
@@ -82,6 +72,22 @@ public static class GameRemoval
         }
     }
 
+    internal static List<OwnedLink> ExpectedLinks(ManagerState state, GameProfile game)
+    {
+        var expected = GameFiles.ConfigurationPaths(game.Executable, game.Api)
+            .Select(path => new OwnedLink(path, ConfigurationService.ConfigPath(game)))
+            .ToList();
+        if (CompatibilityCatalog.Default.Proxy(game.Executable, game.Api) is string proxy)
+        {
+            string runtime = game.Architecture == CpuArchitecture.X64 ? "ReShade64.dll" : "ReShade32.dll";
+            expected.Add(new(
+                Path.Combine(CompatibilityCatalog.Default.InstallationDirectory(game.Executable, game.Api), proxy),
+                Path.Combine(state.Paths.Binaries(game.Build), runtime)));
+        }
+
+        return expected;
+    }
+
     private static void ValidateProfile(ManagerState state, GameProfile game)
     {
         if (!Path.IsPathFullyQualified(state.Paths.Root)
@@ -131,10 +137,19 @@ public static class GameRemoval
         }
         else if (File.Exists(config))
         {
-            string? selected = ConfigurationService.SelectedPreset(IniDocument.Read(config), game.Directory);
-            if (selected != null)
+            try
             {
-                candidates.Add(selected);
+                var document = new IniDocument(ConfigurationService.ReadConfigurationText(
+                    ConfigurationService.ReadConfigurationBytes(config)));
+                string? selected = ConfigurationService.SelectedPreset(document, game.Directory);
+                if (selected != null)
+                {
+                    candidates.Add(selected);
+                }
+            }
+            catch (InvalidDataException)
+            {
+                result.PreservedFiles.Add(config);
             }
         }
 
@@ -167,9 +182,18 @@ public static class GameRemoval
                 continue;
             }
 
-            byte[] contents = File.ReadAllBytes(path);
-            using var reader = new StreamReader(new MemoryStream(contents));
-            var preset = new IniDocument(reader.ReadToEnd());
+            byte[] contents;
+            IniDocument preset;
+            try
+            {
+                contents = ConfigurationService.ReadConfigurationBytes(path);
+                preset = new IniDocument(ConfigurationService.ReadConfigurationText(contents));
+            }
+            catch (InvalidDataException)
+            {
+                result.PreservedFiles.Add(path);
+                continue;
+            }
             if ((preset.Get("", "Techniques") == null && preset.Get("", "TechniqueSorting") == null)
                 || ReferencedByAnotherGame(state, game, path))
             {
@@ -189,12 +213,23 @@ public static class GameRemoval
         {
             string config = ConfigurationService.ConfigPath(other);
             LocalFiles.CheckParents(config);
-            if (LocalFiles.Link(config) != null)
+            if (LocalFiles.Link(config) != null || Directory.Exists(config) || !File.Exists(config))
             {
                 return true;
             }
 
-            string? selected = ConfigurationService.SelectedPreset(IniDocument.Read(config), other.Directory);
+            string? selected;
+            try
+            {
+                var document = new IniDocument(ConfigurationService.ReadConfigurationText(
+                    ConfigurationService.ReadConfigurationBytes(config)));
+                selected = ConfigurationService.SelectedPreset(document, other.Directory);
+            }
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException
+                or ArgumentException or NotSupportedException or System.Security.SecurityException)
+            {
+                return true;
+            }
             if (selected != null && LocalFiles.Same(selected, preset))
             {
                 return true;

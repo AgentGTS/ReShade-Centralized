@@ -15,9 +15,6 @@ public sealed partial class MainForm
             "Unregister", OnRemoveSelectedAsync,
             isAvailable: () => gamesGrid.SelectedRows.Count > 0));
         commands.Controls.Add(CreateActionButton(
-            "Repair all", OnRepairAllAsync,
-            isAvailable: () => gamesGrid.Rows.Count > 0));
-        commands.Controls.Add(CreateActionButton(
             "Open profile", OnOpenProfileAsync,
             isAvailable: () => gamesGrid.SelectedRows.Count > 0));
         commands.Controls.Add(CreateActionButton(
@@ -64,7 +61,9 @@ public sealed partial class MainForm
 
     private GameProfile GetSelectedGame()
     {
-        string? id = gamesGrid.CurrentRow?.Cells["Id"].Value as string;
+        string? id = gamesGrid.SelectedRows.Count == 1
+            ? gamesGrid.SelectedRows[0].Cells["Id"].Value as string
+            : null;
         return storage.RequireState().Games.SingleOrDefault(game => game.Id == id) ??
             throw new InvalidOperationException(
                 "No game is selected. Open Games and select a row. " +
@@ -130,13 +129,6 @@ public sealed partial class MainForm
                     }
                 });
         }
-    }
-
-    private Task OnRepairAllAsync()
-    {
-        return RunOperationAsync(
-            "Repairing managed installations",
-            cancellationToken => games.RepairAsync(progress, cancellationToken));
     }
 
     private Task OnOpenProfileAsync()

@@ -36,7 +36,10 @@ public sealed partial class VulkanService
                     appsPath);
             }
 
-            string[] consumers = IniDocument.Split(IniDocument.Read(appsPath).Get("", "Apps"));
+            string apps = File.Exists(appsPath)
+                ? ConfigurationService.ReadConfigurationText(ConfigurationService.ReadConfigurationBytes(appsPath))
+                : "";
+            string[] consumers = IniDocument.Split(new IniDocument(apps).Get("", "Apps"));
             if (consumers.Length > 0)
             {
                 throw new InvalidOperationException("Other games are still recorded as using this layer. " +

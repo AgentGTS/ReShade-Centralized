@@ -106,10 +106,10 @@ public sealed class RuntimeService(Downloads downloads)
         foreach ((RuntimeBuild build, string? url) in links)
         {
             string installer = Path.Combine(staging, build + ".exe");
-            await downloads.FileAsync(url, installer, progress, cancellationToken);
+            await downloads.FileAsync(url, installer, progress, cancellationToken, SafeArchive.MaximumInstallerBytes);
             cancellationToken.ThrowIfCancellationRequested();
             string output = Path.Combine(staging, build.ToString());
-            SafeArchive.ExtractInstaller(installer, output);
+            SafeArchive.ExtractInstaller(installer, output, cancellationToken);
             versions[build] = ValidatePayload(output, build);
             string expected = Regex.Match(new Uri(url).LocalPath, @"\d+\.\d+\.\d+").Value;
             if (versions[build] != expected)
@@ -135,10 +135,6 @@ public sealed class RuntimeService(Downloads downloads)
         var versions = Enum.GetValues<RuntimeBuild>().ToDictionary(
             build => build,
             build => ValidatePayload(Path.Combine(staging, build.ToString()), build));
-        if (versions.Values.Distinct().Count() != 1)
-        {
-            throw new InvalidDataException("The two official installers must have matching versions.");
-        }
         foreach ((RuntimeBuild build, string version) in versions)
         {
             string source = Path.Combine(staging, build.ToString());
@@ -146,19 +142,37 @@ public sealed class RuntimeService(Downloads downloads)
             foreach (string name in PayloadFiles)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                string incoming = Path.Combine(source, name);
                 string target = Path.Combine(state.Paths.Binaries(build), name);
+                LocalFiles.CheckParents(target);
                 if (LocalFiles.Link(target) != null)
                 {
                     throw new IOException("Central runtime file is a symbolic link: " + target);
                 }
 
-                if (name.EndsWith(".dll") && File.Exists(target) && !PortableExecutable.IsReShade(target))
+                bool exists = File.Exists(target);
+                if (exists && (File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0)
                 {
-                    throw new IOException("An unrelated DLL occupies the central runtime path: " + target);
+                    throw new IOException("Central runtime file is a reparse point: " + target);
                 }
 
-                transaction.Copy(Path.Combine(source, name), target);
-                state.RuntimeHashes[target] = LocalFiles.Hash(target);
+                string incomingHash = LocalFiles.Hash(incoming, cancellationToken);
+                string? currentHash = exists ? LocalFiles.Hash(target, cancellationToken) : null;
+                if (!string.Equals(currentHash, incomingHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    string? expected = exists && state.RuntimeHashes.TryGetValue(target, out string? recorded)
+                        ? recorded : null;
+                    if ((exists && (expected == null
+                            || !string.Equals(expected, currentHash, StringComparison.OrdinalIgnoreCase)))
+                        || !transaction.CopyIfUnchanged(incoming, target, expected, cancellationToken)
+                        || !string.Equals(LocalFiles.Hash(target, cancellationToken), incomingHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new IOException("A modified or unmanaged file occupies the central runtime path: " +
+                            target + ". Back it up or move it elsewhere before retrying.");
+                    }
+                }
+
+                state.RuntimeHashes[target] = incomingHash;
             }
         }
     }

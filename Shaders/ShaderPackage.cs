@@ -11,6 +11,7 @@ public sealed class ShaderPackage
 
     public bool Enabled { get; init; }
 
+    public string[] EffectFiles { get; init; } = [];
     public string[] DeniedEffects { get; init; } = [];
     public override string ToString() => Name + (Required ? " (required)" : "");
 }

@@ -155,12 +155,16 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
         StagingDirectory? staging = null;
         try
         {
-            staging = new StagingDirectory(storage.Store);
+            staging = new StagingDirectory(storage.Store, warning =>
+            {
+                messages.Add(warning);
+                progress?.Report(warning);
+            });
             ManagerState updatedState = storage.State!.Clone();
             InstalledPackage? installed = updatedState.Packages.SingleOrDefault(item => item.Id == package.Id);
             if (installed != null)
             {
-                ShaderFiles.CheckUnmodified(installed, updatedState.Paths);
+                ShaderFiles.CheckUnmodified(installed, updatedState.Paths, cancellationToken);
             }
             progress?.Report("Updating " + package.Name);
             string source = await StageAsync(package, staging.Path, progress, cancellationToken);
@@ -341,7 +345,7 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
         CancellationToken cancellationToken,
         Action<int>? beforeDelete = null)
     {
-        var files = new List<string>();
+        var files = new List<(string Path, string Hash)>();
         foreach (string root in roots)
         {
             LocalFiles.CheckParents(Path.Combine(root, "check"));
@@ -354,17 +358,20 @@ public sealed class ShaderLibrary(CentralStorage storage, Downloads downloads)
                 foreach (string file in ShaderFiles.EnumerateFiles(root))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    files.Add(file);
+                    files.Add((file, LocalFiles.Hash(file, cancellationToken)));
                 }
             }
         }
         beforeDelete?.Invoke(files.Count);
         using (FileTransaction transaction = storage.BeginTransaction(description))
         {
-            foreach (string file in files)
+            foreach ((string file, string hash) in files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                transaction.Delete(file);
+                if (!transaction.DeleteIfUnchanged(file, expectedHash: hash))
+                {
+                    throw new IOException("A shader file changed while it was being removed: " + file);
+                }
             }
             updateState(transaction);
             storage.Commit(state, transaction, cancellationToken);

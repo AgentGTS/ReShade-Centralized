@@ -4,11 +4,12 @@ namespace ReShadeCentralized;
 
 public sealed class Downloads : IDisposable
 {
+    private const long MaximumTextBytes = 16L * 1024 * 1024;
     private readonly HttpClient client;
 
-    public Downloads(HttpMessageHandler? handler = null)
+    public Downloads()
     {
-        client = handler == null ? new HttpClient() : new HttpClient(handler);
+        client = new HttpClient();
         client.Timeout = TimeSpan.FromMinutes(10);
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
             "ReShadeCentralized (+https://github.com/AgentGTS/ReShade-Centralized)");
@@ -37,9 +38,12 @@ public sealed class Downloads : IDisposable
 
     public async Task<string> TextAsync(string url, CancellationToken cancellationToken)
     {
-        using HttpResponseMessage response = await ResponseAsync(url, cancellationToken);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(client.Timeout);
+        using HttpResponseMessage response = await ResponseAsync(url, deadline.Token);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cancellationToken);
+        await response.Content.LoadIntoBufferAsync(MaximumTextBytes, deadline.Token);
+        return await response.Content.ReadAsStringAsync(deadline.Token);
     }
 
     public static Uri Url(string url)
@@ -58,31 +62,43 @@ public sealed class Downloads : IDisposable
         string url,
         string destination,
         IProgress<string>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long maximumBytes = 8L * 1024 * 1024 * 1024)
     {
-        using HttpResponseMessage response = await ResponseAsync(url, cancellationToken);
+        if (maximumBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+        }
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(client.Timeout);
+        using HttpResponseMessage response = await ResponseAsync(url, deadline.Token);
         response.EnsureSuccessStatusCode();
-        await using Stream source = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await using FileStream target = File.Create(destination);
+        if (response.Content.Headers.ContentLength > maximumBytes)
+        {
+            throw new InvalidDataException("Download exceeds the permitted size.");
+        }
+        await using Stream source = await response.Content.ReadAsStreamAsync(deadline.Token);
+        LocalFiles.CheckParents(destination);
+        await using FileStream target = new(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         byte[] buffer = new byte[81920];
         long received = 0;
         var clock = Stopwatch.StartNew();
 
         while (true)
         {
-            int count = await source.ReadAsync(buffer, cancellationToken);
+            int count = await source.ReadAsync(buffer, deadline.Token);
             if (count == 0)
             {
                 break;
             }
 
             received += count;
-            if (received > 8L * 1024 * 1024 * 1024)
+            if (received > maximumBytes)
             {
-                throw new InvalidDataException("Download exceeds the 8 GB limit.");
+                throw new InvalidDataException("Download exceeds the permitted size.");
             }
 
-            await target.WriteAsync(buffer.AsMemory(0, count), cancellationToken);
+            await target.WriteAsync(buffer.AsMemory(0, count), deadline.Token);
             if (clock.ElapsedMilliseconds >= 250)
             {
                 progress?.Report(
