@@ -2,8 +2,7 @@ using System.Reflection;
 
 namespace ReShadeCentralized;
 
-public sealed partial class MainForm : Form
-{
+public sealed partial class MainForm : Form {
     private static readonly string AppVersion =
         typeof(MainForm).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
             .InformationalVersion.Split('+')[0];
@@ -15,114 +14,27 @@ public sealed partial class MainForm : Form
     private readonly RuntimeInstaller runtimes;
     private readonly ShaderCatalog shaderCatalog;
     private readonly ShaderLibrary shaders;
-    private readonly TableLayoutPanel contentRoot;
-    private readonly NavigationTabs tabs = new()
-    {
+    private readonly NavigationTabs tabs = new() {
         Dock = DockStyle.Fill
     };
 
-    private readonly GamesGrid gamesGrid = new()
-    {
-        Dock = DockStyle.Fill,
-        ReadOnly = true,
-        AllowUserToAddRows = false,
-        AllowUserToDeleteRows = false,
-        MultiSelect = false,
-        SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells,
-        RowHeadersVisible = false
-    };
-
-    private readonly PackagesGrid packageList = new();
-
-    private readonly TextBox packageSearchBox = new()
-    {
-        PlaceholderText = "Search shader packages\u2026",
-        Dock = DockStyle.Top
-    };
-
-    private readonly TextBox activityLog = new()
-    {
+    private readonly TextBox activityLog = new() {
         Multiline = true,
         ReadOnly = true,
-        ScrollBars = ScrollBars.Vertical,
         Dock = DockStyle.Fill
     };
 
-    private readonly Label storageLabel = new()
-    {
-        AutoSize = true,
-        MaximumSize = new Size(800, 0)
-    };
-
-    private readonly Label versionsLabel = new()
-    {
-        AutoSize = true
-    };
-
-    private readonly Label statusLabel = new()
-    {
+    private readonly Label statusLabel = new() {
         Dock = DockStyle.Fill,
         AutoEllipsis = true,
         TextAlign = ContentAlignment.MiddleLeft,
-        Text = "Ready",
-        Margin = new Padding(8)
-    };
-
-    private readonly Label runtimeStatusLabel = new()
-    {
-        AutoSize = true,
-        Anchor = AnchorStyles.Left,
-        AccessibleName = "Installed ReShade",
-        Margin = new Padding(3, 0, 16, 0)
-    };
-
-    private readonly DarkComboBox vulkanBuildSelector = new()
-    {
-        DropDownStyle = ComboBoxStyle.DropDownList,
-        Width = 260
-    };
-
-    private readonly VulkanGamesList vulkanGamesList = new()
-    {
-        Width = 800,
-        Height = 105,
-        HorizontalScrollbar = true
-    };
-
-    private readonly Label vulkanStatusLabel = new()
-    {
-        AutoSize = true,
-        Dock = DockStyle.Fill,
-        AccessibleName = "Vulkan registration status",
         Margin = Padding.Empty
     };
 
-    private readonly Panel vulkanWarningIcon = new()
-    {
-        Size = new Size(16, 16),
-        Margin = new Padding(0, 2, 8, 0),
-        AccessibleName = "Warning"
-    };
-
-    private readonly FlatButton cancelButton = new("Cancel")
-    {
-        Enabled = false,
-        Margin = Padding.Empty
-    };
-
-    private readonly HashSet<string> selectedPackageIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<(Button Button, Func<bool> IsAvailable)> actionAvailability = [];
     private readonly IProgress<string> progress;
-    private Button? applySelectionButton;
-    private List<ShaderPackage> catalog = [];
-    private CancellationTokenSource? operationCancellation;
-    private string? lastVulkanInspectionError;
-    private readonly ShutdownDeadline shutdownDeadline = new();
-    private bool closeAfterOperation;
 
-    public MainForm(string applicationDirectory)
-    {
+    public MainForm(string applicationDirectory) {
         var registry = new WindowsLayerRegistry();
         storage = new(StateStore.ForApplication(applicationDirectory), registry);
         vulkan = new(registry);
@@ -131,8 +43,7 @@ public sealed partial class MainForm : Form
         shaderCatalog = new(downloads, storage.Store);
         shaders = new(storage, downloads);
 
-        using (Stream icon = typeof(MainForm).Assembly.GetManifestResourceStream("ReShadeCentralized.AppIcon.ico")!)
-        {
+        using (Stream icon = typeof(MainForm).Assembly.GetManifestResourceStream("ReShadeCentralized.AppIcon.ico")!) {
             Icon = new Icon(icon);
         }
 
@@ -145,21 +56,18 @@ public sealed partial class MainForm : Form
         progress = new Progress<string>(WriteLog);
         storage.Warning += message => progress.Report(message);
 
-        var root = new TableLayoutPanel
-        {
+        var root = new TableLayoutPanel {
             Dock = DockStyle.Fill,
             RowCount = 2,
             ColumnCount = 1,
             Padding = new Padding(24)
         };
-        contentRoot = root;
         root.RowStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize));
         Controls.Add(root);
         root.Controls.Add(tabs);
 
-        var footer = new TableLayoutPanel
-        {
+        var footer = new TableLayoutPanel {
             Dock = DockStyle.Fill,
             ColumnCount = 6,
             AutoSize = true,
@@ -167,19 +75,19 @@ public sealed partial class MainForm : Form
             Margin = new Padding(0, 12, 0, 0)
         };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        statusLabel.Margin = Padding.Empty;
+        for (int column = 1; column < footer.ColumnCount; column++) {
+            footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        }
+
         footer.Controls.Add(statusLabel, 0, 0);
         BuildRuntimeUpdateNotice(footer);
         footer.Controls.Add(runtimeStatusLabel, 2, 0);
-        footer.Controls.Add(cancelButton, 3, 0);
+        FlowLayoutPanel storageCommands = CreateCommandBar();
+        storageCommands.Controls.Add(cancelButton);
+        storageCommands.Controls.Add(chooseStorageButton);
+        footer.Controls.Add(storageCommands, 3, 0);
 
-        var helpButton = new FlatButton("?")
-        {
+        var helpButton = new FlatButton("?") {
             AutoSize = false,
             Size = new Size(36, 36),
             Padding = Padding.Empty,
@@ -192,49 +100,26 @@ public sealed partial class MainForm : Form
         footer.Controls.Add(runtimeUpdateButton, 4, 0);
         footer.Controls.Add(helpButton, 5, 0);
 
-        HelpRequested += (_, e) =>
-        {
+        HelpRequested += (_, e) => {
             ShowHelp();
             e.Handled = true;
         };
         root.Controls.Add(footer);
 
-        cancelButton.Click += async (_, _) =>
-        {
+        cancelButton.Click += async (_, _) => {
             if (storageLoadFailed && operationCancellation == null)
-            {
                 await InitializeAsync();
-            }
             else
-            {
                 operationCancellation?.Cancel();
-            }
         };
+        chooseStorageButton.Click += async (_, _) => await ChooseStorageAsync();
         BuildGames();
         BuildPackages();
         BuildSettings();
 
-        tabs.Deselected += (_, e) =>
-        {
-            if (e.TabPageIndex == 1 && operationCancellation == null)
-            {
-                ResetPackageChoices();
-            }
-        };
-        tabs.SelectedIndexChanged += (_, _) =>
-        {
-            if (tabs.SelectedIndex == 2 && operationCancellation == null)
-            {
-                RefreshVulkanStatus();
-            }
-        };
-        vulkanBuildSelector.SelectedIndexChanged += (_, _) =>
-        {
-            if (tabs.SelectedIndex == 2 && operationCancellation == null)
-            {
-                RefreshVulkanStatus();
-            }
-        };
+        async void RefreshVulkanSettings(object? sender, EventArgs e) => await RefreshVulkanStatusAsync();
+        tabs.SelectedIndexChanged += RefreshVulkanSettings;
+        vulkanBuildSelector.SelectedIndexChanged += RefreshVulkanSettings;
         TableLayoutPanel activity = CreatePage("Activity");
         activityLog.Font = DarkTheme.MonospaceFont;
         activityLog.WordWrap = false;
@@ -244,44 +129,38 @@ public sealed partial class MainForm : Form
         BuildCredits();
         Shown += async (_, _) => await InitializeAsync();
 
-        FormClosing += (_, e) =>
-        {
+        FormClosing += (_, e) => {
             if (!closeAfterOperation || operationCancellation != null)
-            {
-                this.shutdownDeadline.Request();
-            }
+                shutdownDeadline.Request();
 
-            if (operationCancellation != null)
-            {
+            if (operationCancellation != null) {
                 e.Cancel = true;
                 closeAfterOperation = true;
                 Text = "Closing ReShade Centralized - close again to exit immediately";
                 SetStorageControlsLocked(true);
+                tabs.Enabled = false;
+                cancelButton.Enabled = false;
+                chooseStorageButton.Visible = false;
                 operationCancellation.Cancel();
                 storageLoading.Report(new("Closing; close again to exit immediately"));
                 WriteLog("Closing; close again to exit immediately. Waiting briefly for active work to stop.");
             }
         };
-        FormClosed += (_, _) =>
-        {
+        FormClosed += (_, _) => {
             Icon?.Dispose();
             storage.Dispose();
             downloads.Dispose();
-            this.shutdownDeadline.Dispose();
+            shutdownDeadline.Dispose();
         };
         DarkTheme.Apply(this);
         SetStorageControlsLocked(true);
-        tabs.Enabled = false;
         statusLabel.Text = "Loading central storage";
         storageLoading.BeginLoading();
     }
 
-    private void ShowHelp()
-    {
-        if (storageControlsLocked)
-        {
+    private void ShowHelp() {
+        if (closeAfterOperation)
             return;
-        }
 
         using var dialog = new HelpDialog();
         dialog.ShowDialog(this);
@@ -291,57 +170,44 @@ public sealed partial class MainForm : Form
         string label,
         Func<Task> action,
         bool primary = false,
-        Func<bool>? isAvailable = null)
-    {
+        Func<bool>? isAvailable = null) {
         var button = new FlatButton(label, primary);
 
-        if (isAvailable != null)
-        {
+        if (isAvailable != null) {
             actionAvailability.Add((button, isAvailable));
             button.Enabled = isAvailable();
         }
 
-        button.Click += async (_, _) =>
-        {
-            try
-            {
+        button.Click += async (_, _) => {
+            try {
                 await action();
-            }
-            catch (Exception e)
-            {
+            } catch (Exception e) {
                 ReportError(e);
             }
         };
         return button;
     }
 
-    private void UpdateActionAvailability()
-    {
+    private void UpdateActionAvailability() {
         if (IsDisposed || Disposing)
-        {
             return;
-        }
 
-        foreach ((Button button, Func<bool> isAvailable) in actionAvailability)
-        {
+        foreach ((Button button, Func<bool> isAvailable) in actionAvailability) {
             button.Enabled = isAvailable();
         }
 
-        if (applySelectionButton != null)
-        {
+        if (applySelectionButton != null) {
             bool updateOnly = selectedPackageIds.Count > 0 && storage.State != null
                 && selectedPackageIds.SetEquals(storage.State.Packages.Select(package => package.Id));
             applySelectionButton.Text = updateOnly ? "Update selected" : "Apply selection";
         }
     }
 
-    private TableLayoutPanel CreatePage(string tabName)
-    {
+    private TableLayoutPanel CreatePage(string tabName) {
         var page = new TabPage(tabName) { Padding = new Padding(20) };
         tabs.TabPages.Add(page);
 
-        var layout = new TableLayoutPanel
-        {
+        var layout = new TableLayoutPanel {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 3,
@@ -355,8 +221,7 @@ public sealed partial class MainForm : Form
         return layout;
     }
 
-    private static FlowLayoutPanel CreateCommandBar() => new()
-    {
+    private static FlowLayoutPanel CreateCommandBar() => new() {
         AutoSize = true,
         AutoSizeMode = AutoSizeMode.GrowAndShrink,
         WrapContents = false,
@@ -364,10 +229,8 @@ public sealed partial class MainForm : Form
         Margin = Padding.Empty
     };
 
-    private static TableLayoutPanel CreateSection(TableLayoutPanel parent, string title)
-    {
-        var section = new TableLayoutPanel
-        {
+    private static TableLayoutPanel CreateSection(TableLayoutPanel parent, string title) {
+        var section = new TableLayoutPanel {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Dock = DockStyle.Fill,
@@ -377,16 +240,14 @@ public sealed partial class MainForm : Form
             BackColor = DarkTheme.Raised
         };
         section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        section.Paint += (_, e) =>
-        {
+        section.Paint += (_, e) => {
             using var border = new Pen(DarkTheme.Border);
             e.Graphics.DrawRectangle(border, 0, 0, section.Width - 1, section.Height - 1);
         };
 
         parent.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         parent.Controls.Add(section, 0, parent.RowCount++);
-        AddSectionRow(section, new Label
-        {
+        AddSectionRow(section, new Label {
             Text = title,
             Font = new Font(DarkTheme.BodyFont, FontStyle.Bold),
             AutoSize = true
@@ -394,8 +255,7 @@ public sealed partial class MainForm : Form
         return section;
     }
 
-    private static void AddSectionRow(TableLayoutPanel section, Control control)
-    {
+    private static void AddSectionRow(TableLayoutPanel section, Control control) {
         control.Dock = DockStyle.Fill;
         control.Margin = new Padding(0, 0, 0, 12);
         section.RowStyles.Add(new RowStyle(SizeType.AutoSize));

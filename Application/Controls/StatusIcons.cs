@@ -3,32 +3,27 @@ using System.Drawing.Drawing2D;
 
 namespace ReShadeCentralized;
 
-internal enum ApiCheckState
-{
+internal enum ApiCheckState {
     Ready,
     Checking,
     Detected,
     Warning
 }
 
-internal sealed class ApiCheckIcon : Control
-{
+internal sealed class ApiCheckIcon : Control {
     private readonly System.Windows.Forms.Timer animation = new() { Interval = 80 };
     private int angle;
     private ApiCheckState state;
 
     [DefaultValue(ApiCheckState.Ready)]
-    public ApiCheckState State
-    {
+    public ApiCheckState State {
         get => state;
-        set
-        {
+        set {
             state = value;
             angle = 0;
             animation.Enabled = Visible && state == ApiCheckState.Checking;
 
-            AccessibleDescription = state switch
-            {
+            AccessibleDescription = state switch {
                 ApiCheckState.Ready => "Ready to check",
                 ApiCheckState.Checking => "Checking graphics API",
                 ApiCheckState.Detected => "Graphics API recommendation available",
@@ -38,8 +33,7 @@ internal sealed class ApiCheckIcon : Control
         }
     }
 
-    public ApiCheckIcon()
-    {
+    public ApiCheckIcon() {
         Size = new Size(16, 16);
         TabStop = false;
         AccessibleName = "Graphics API check status";
@@ -53,46 +47,38 @@ internal sealed class ApiCheckIcon : Control
         BackColor = Color.Transparent;
         State = ApiCheckState.Ready;
 
-        animation.Tick += (_, _) =>
-        {
+        animation.Tick += (_, _) => {
             angle = (angle + 30) % 360;
             Invalidate();
         };
     }
 
-    protected override void OnVisibleChanged(EventArgs e)
-    {
+    protected override void OnVisibleChanged(EventArgs e) {
         base.OnVisibleChanged(e);
         animation.Enabled = Visible && state == ApiCheckState.Checking;
     }
 
-    protected override void OnPaint(PaintEventArgs e)
-    {
+    protected override void OnPaint(PaintEventArgs e) {
         base.OnPaint(e);
-        if (state == ApiCheckState.Warning)
-        {
+        if (state == ApiCheckState.Warning) {
             WarningIcon.Draw(e.Graphics, ClientRectangle, ForeColor);
             return;
         }
 
         float scale = Math.Min(ClientSize.Width, ClientSize.Height) / 16f;
         if (scale <= 0)
-        {
             return;
-        }
 
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.TranslateTransform((Width - (16 * scale)) / 2, (Height - (16 * scale)) / 2);
         e.Graphics.ScaleTransform(scale, scale);
-        using var pen = new Pen(ForeColor, 1.5f)
-        {
+        using var pen = new Pen(ForeColor, 1.5f) {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
             LineJoin = LineJoin.Round
         };
         using var fill = new SolidBrush(ForeColor);
-        switch (state)
-        {
+        switch (state) {
             case ApiCheckState.Ready:
                 e.Graphics.FillEllipse(fill, 6, 6, 4, 4);
                 break;
@@ -107,12 +93,39 @@ internal sealed class ApiCheckIcon : Control
         }
     }
 
-    protected override void Dispose(bool disposing)
-    {
+    protected override void Dispose(bool disposing) {
         if (disposing)
-        {
             animation.Dispose();
-        }
         base.Dispose(disposing);
+    }
+}
+
+internal static class WarningIcon {
+    public static void Draw(Graphics graphics, Rectangle bounds, Color color) {
+        float scale = Math.Min(bounds.Width, bounds.Height) / 16f;
+        if (scale <= 0)
+            return;
+
+        GraphicsState saved = graphics.Save();
+        try {
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.TranslateTransform(
+                bounds.Left + ((bounds.Width - (16 * scale)) / 2),
+                bounds.Top + ((bounds.Height - (16 * scale)) / 2));
+            graphics.ScaleTransform(scale, scale);
+            using var pen = new Pen(color, 1.5f) {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round,
+                LineJoin = LineJoin.Round
+            };
+            using var fill = new SolidBrush(color);
+
+            PointF[] triangle = [new(8, 1.5f), new(14.5f, 13.5f), new(1.5f, 13.5f)];
+            graphics.DrawPolygon(pen, triangle);
+            graphics.DrawLine(pen, 8, 5.5f, 8, 8.5f);
+            graphics.FillEllipse(fill, 7.2f, 10.5f, 1.6f, 1.6f);
+        } finally {
+            graphics.Restore(saved);
+        }
     }
 }

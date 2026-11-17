@@ -1,13 +1,13 @@
+using System.Drawing.Drawing2D;
+
 namespace ReShadeCentralized;
 
-internal class FlatButton : Button
-{
+internal class FlatButton : Button {
     private readonly bool primary;
     private bool hovered;
     private bool pressed;
 
-    public FlatButton(string text, bool primary = false)
-    {
+    public FlatButton(string text, bool primary = false) {
         this.primary = primary;
         Text = text;
         AutoSize = true;
@@ -28,12 +28,9 @@ internal class FlatButton : Button
         MouseLeave += (_, _) => SetInteraction(hovered: false, pressed: false);
         MouseDown += (_, e) => SetInteraction(hovered, pressed: e.Button == MouseButtons.Left);
         MouseUp += (_, _) => SetInteraction(hovered, pressed: false);
-        KeyDown += (_, e) =>
-        {
+        KeyDown += (_, e) => {
             if (e.KeyCode == Keys.Space)
-            {
                 SetInteraction(hovered, pressed: true);
-            }
         };
         KeyUp += (_, _) => SetInteraction(hovered, pressed: false);
         GotFocus += (_, _) => Invalidate();
@@ -41,8 +38,7 @@ internal class FlatButton : Button
         EnabledChanged += (_, _) => SetInteraction(hovered, pressed: false);
     }
 
-    public void ApplyTheme()
-    {
+    public void ApplyTheme() {
         BackColor = primary ? DarkTheme.Accent : DarkTheme.Raised;
         ForeColor = primary ? DarkTheme.OnAccent : DarkTheme.Text;
         FlatAppearance.BorderSize = primary ? 0 : 1;
@@ -50,32 +46,25 @@ internal class FlatButton : Button
         FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(138, 235, 211) : DarkTheme.Hover;
         FlatAppearance.MouseDownBackColor = primary ? DarkTheme.Accent : DarkTheme.Selection;
 
-        if (SystemInformation.HighContrast)
-        {
+        if (SystemInformation.HighContrast) {
             FlatAppearance.MouseOverBackColor = BackColor;
             FlatAppearance.MouseDownBackColor = BackColor;
         }
     }
 
-    protected override void OnPaint(PaintEventArgs e)
-    {
+    protected override void OnPaint(PaintEventArgs e) {
         Color background = Enabled ? BackColor : DarkTheme.Raised;
         if (Enabled && pressed)
-        {
             background = FlatAppearance.MouseDownBackColor;
-        }
         else if (Enabled && hovered)
-        {
             background = FlatAppearance.MouseOverBackColor;
-        }
 
         Color disabledForeground = SystemInformation.HighContrast ? SystemColors.GrayText : DarkTheme.Muted;
         Color foreground = Enabled ? ForeColor : disabledForeground;
         using var fill = new SolidBrush(background);
         e.Graphics.FillRectangle(fill, ClientRectangle);
 
-        if (FlatAppearance.BorderSize > 0 || (Focused && ShowFocusCues))
-        {
+        if (FlatAppearance.BorderSize > 0 || (Focused && ShowFocusCues)) {
             using var border = new Pen(Focused && ShowFocusCues ? DarkTheme.Accent : DarkTheme.Border);
             e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         }
@@ -83,14 +72,11 @@ internal class FlatButton : Button
         TextFormatFlags flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
             | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
         if (!ShowKeyboardCues)
-        {
             flags |= TextFormatFlags.HidePrefix;
-        }
 
         TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, foreground, flags);
 
-        if (Focused && ShowFocusCues)
-        {
+        if (Focused && ShowFocusCues) {
             ControlPaint.DrawFocusRectangle(
                 e.Graphics,
                 Rectangle.Inflate(ClientRectangle, -4, -4),
@@ -99,10 +85,36 @@ internal class FlatButton : Button
         }
     }
 
-    private void SetInteraction(bool hovered, bool pressed)
-    {
+    private void SetInteraction(bool hovered, bool pressed) {
         this.hovered = hovered;
         this.pressed = pressed;
         Invalidate();
+    }
+}
+
+internal sealed class RefreshButton : FlatButton {
+    public RefreshButton() : base("") {
+        AutoSize = false;
+        Size = new Size(36, 36);
+        Padding = Padding.Empty;
+        Margin = new Padding(8, 0, 0, 0);
+        Dock = DockStyle.Fill;
+    }
+
+    protected override void OnPaint(PaintEventArgs e) {
+        base.OnPaint(e);
+        GraphicsState state = e.Graphics.Save();
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        float scale = DeviceDpi / 96f;
+        e.Graphics.TranslateTransform(Width / 2f, Height / 2f);
+        e.Graphics.ScaleTransform(scale, scale);
+        using var pen = new Pen(Enabled ? ForeColor : DarkTheme.Muted, 1.7f) {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round
+        };
+        e.Graphics.DrawArc(pen, -7, -7, 14, 14, 35, 290);
+        e.Graphics.DrawLines(pen, [new PointF(1, -5), new PointF(6, -4), new PointF(6, -9)]);
+        e.Graphics.Restore(state);
     }
 }

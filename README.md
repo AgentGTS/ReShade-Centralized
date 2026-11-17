@@ -45,8 +45,8 @@ Release files are written to `release`.
 ## Credits and license
 
 - [OopyDoopy](https://github.com/OopyDoopy/ReShade-Centralized): original ReShade Centralized.
-- [crosire and contributors](https://github.com/crosire/reshade): ReShade and its native behavior references; see the full [BSD-3-Clause notice](https://github.com/crosire/reshade/blob/v6.8.0/LICENSE.md).
-- The [upstream shader catalog](https://github.com/crosire/reshade-shaders/blob/list/EffectPackages.ini) and [compatibility catalog](https://github.com/crosire/reshade-shaders/blob/list/Compatibility.ini) are downloaded directly and cached in the user's central storage. Upstream catalog snapshots are excluded from this repository and release; catalog licensing limits shown in Credits remain separate from this application's license.
+- [crosire and contributors](https://github.com/crosire/reshade): ReShade runtime. [BSD-3-Clause notice](https://github.com/crosire/reshade/blob/v6.8.0/LICENSE.md)
+- The app downloads the [upstream shader catalog](https://github.com/crosire/reshade-shaders/blob/list/EffectPackages.ini) and caches it in central storage. Credits describes the catalog's distribution terms.
 - Shader package authors.
 - [.NET contributors](https://github.com/dotnet): WinForms and the bundled runtime.
 

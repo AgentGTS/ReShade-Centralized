@@ -2,10 +2,8 @@ using System.ComponentModel;
 
 namespace ReShadeCentralized;
 
-internal sealed class GamesGrid : DataGridView
-{
-    public GamesGrid()
-    {
+internal sealed class GamesGrid : AppGrid {
+    public GamesGrid() {
         DoubleBuffered = true;
         AutoGenerateColumns = false;
         AddColumn("Id", "Id").Visible = false;
@@ -21,8 +19,7 @@ internal sealed class GamesGrid : DataGridView
         AddColumn("Executable", "Executable");
     }
 
-    private void AddWarningColumn(string name, string description)
-    {
+    private void AddWarningColumn(string name, string description) {
         DataGridViewColumn status = AddColumn(name, "");
         status.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
         status.Width = LogicalToDeviceUnits(24);
@@ -32,10 +29,8 @@ internal sealed class GamesGrid : DataGridView
         status.ToolTipText = description;
     }
 
-    private DataGridViewColumn AddColumn(string name, string heading)
-    {
-        var column = new DataGridViewTextBoxColumn
-        {
+    private DataGridViewColumn AddColumn(string name, string heading) {
+        var column = new DataGridViewTextBoxColumn {
             Name = name,
             DataPropertyName = name,
             HeaderText = heading
@@ -44,28 +39,22 @@ internal sealed class GamesGrid : DataGridView
         return column;
     }
 
-    protected override void OnCellPainting(DataGridViewCellPaintingEventArgs e)
-    {
+    protected override void OnCellPainting(DataGridViewCellPaintingEventArgs e) {
         base.OnCellPainting(e);
         if (e.RowIndex < 0 || e.ColumnIndex < 0
             || Columns[e.ColumnIndex].Name is not ("InstallationWarning" or "ShaderWarning"))
-        {
             return;
-        }
 
         e.Paint(e.ClipBounds, e.PaintParts & ~DataGridViewPaintParts.ContentForeground);
-        if (e.Value is string { Length: > 0 })
-        {
+        if (e.Value is string { Length: > 0 }) {
             int size = LogicalToDeviceUnits(16);
             var bounds = new Rectangle(e.CellBounds.Left + ((e.CellBounds.Width - size) / 2),
                 e.CellBounds.Top + ((e.CellBounds.Height - size) / 2), size, size);
-            if (e.Graphics != null)
-            {
+            if (e.Graphics != null) {
                 Color color = Columns[e.ColumnIndex].Name == "InstallationWarning"
                     ? DarkTheme.Danger
                     : DarkTheme.Warning;
-                if (SystemInformation.HighContrast)
-                {
+                if (SystemInformation.HighContrast) {
                     color = (e.State & DataGridViewElementStates.Selected) != 0
                         ? SystemColors.HighlightText : SystemColors.WindowText;
                 }
@@ -76,42 +65,32 @@ internal sealed class GamesGrid : DataGridView
         e.Handled = true;
     }
 
-    protected override void OnDataBindingComplete(DataGridViewBindingCompleteEventArgs e)
-    {
+    protected override void OnDataBindingComplete(DataGridViewBindingCompleteEventArgs e) {
         if (e.ListChangedType == ListChangedType.Reset)
-        {
             ClearSelection();
-        }
 
         base.OnDataBindingComplete(e);
-        foreach (DataGridViewRow row in Rows)
-        {
-            foreach (string name in new[] { "InstallationWarning", "ShaderWarning" })
-            {
+        foreach (DataGridViewRow row in Rows) {
+            foreach (string name in new[] { "InstallationWarning", "ShaderWarning" }) {
                 DataGridViewCell cell = row.Cells[name];
                 cell.ToolTipText = cell.Value as string ?? "";
             }
         }
     }
 
-    protected override void OnCellValueChanged(DataGridViewCellEventArgs e)
-    {
+    protected override void OnCellValueChanged(DataGridViewCellEventArgs e) {
         base.OnCellValueChanged(e);
         if (e.RowIndex >= 0 && e.ColumnIndex >= 0
-            && Columns[e.ColumnIndex].Name is "InstallationWarning" or "ShaderWarning")
-        {
+            && Columns[e.ColumnIndex].Name is "InstallationWarning" or "ShaderWarning") {
             DataGridViewCell cell = Rows[e.RowIndex].Cells[e.ColumnIndex];
             cell.ToolTipText = cell.Value as string ?? "";
         }
     }
 
-    protected override void OnPaint(PaintEventArgs e)
-    {
+    protected override void OnPaint(PaintEventArgs e) {
         base.OnPaint(e);
         if (RowCount != 0 || Controls.OfType<StorageLoadingIndicator>().Any(control => control.Visible))
-        {
             return;
-        }
 
         int center = ColumnHeadersHeight + ((Height - ColumnHeadersHeight) / 2);
         var titleBounds = new Rectangle(16, center - 16, Width - 32, 32);

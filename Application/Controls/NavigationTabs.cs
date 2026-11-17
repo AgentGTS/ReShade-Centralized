@@ -1,11 +1,9 @@
 namespace ReShadeCentralized;
 
-internal sealed class NavigationTabs : TabControl
-{
+internal sealed class NavigationTabs : TabControl {
     private int hoveredIndex = -1;
 
-    public NavigationTabs()
-    {
+    public NavigationTabs() {
         SetStyle(
             ControlStyles.UserPaint
             | ControlStyles.AllPaintingInWmPaint
@@ -22,20 +20,17 @@ internal sealed class NavigationTabs : TabControl
         LostFocus += (_, _) => Invalidate();
     }
 
-    protected override void OnPaintBackground(PaintEventArgs e)
-    {
+    protected override void OnPaintBackground(PaintEventArgs e) {
         e.Graphics.Clear(DarkTheme.Background);
     }
 
-    protected override void OnPaint(PaintEventArgs e)
-    {
+    protected override void OnPaint(PaintEventArgs e) {
         using var border = new Pen(DarkTheme.Border);
         Rectangle pageBounds = DisplayRectangle;
         pageBounds.Inflate(1, 1);
         e.Graphics.DrawRectangle(border, pageBounds);
 
-        for (var index = 0; index < TabCount; index++)
-        {
+        for (var index = 0; index < TabCount; index++) {
             Rectangle bounds = GetTabRect(index);
             bool selected = SelectedIndex == index;
             Color background = selected
@@ -46,9 +41,7 @@ internal sealed class NavigationTabs : TabControl
             Color foreground = selected ? DarkTheme.Text : DarkTheme.Muted;
 
             if (!Enabled)
-            {
                 foreground = SystemColors.GrayText;
-            }
 
             TextRenderer.DrawText(
                 e.Graphics,
@@ -57,8 +50,7 @@ internal sealed class NavigationTabs : TabControl
                 bounds,
                 foreground,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-            if (selected)
-            {
+            if (selected) {
                 using var accent = new SolidBrush(DarkTheme.Accent);
                 int thickness = LogicalToDeviceUnits(3);
                 e.Graphics.FillRectangle(
@@ -68,8 +60,7 @@ internal sealed class NavigationTabs : TabControl
                     bounds.Width - 24,
                     thickness);
 
-                if (Focused && ShowFocusCues)
-                {
+                if (Focused && ShowFocusCues) {
                     Rectangle focus = Rectangle.Inflate(bounds, -6, -6);
                     ControlPaint.DrawFocusRectangle(e.Graphics, focus, foreground, background);
                 }
@@ -77,28 +68,23 @@ internal sealed class NavigationTabs : TabControl
         }
     }
 
-    protected override void OnMouseMove(MouseEventArgs e)
-    {
+    protected override void OnMouseMove(MouseEventArgs e) {
         base.OnMouseMove(e);
         int hovered = -1;
-        for (var index = 0; index < TabCount; index++)
-        {
-            if (GetTabRect(index).Contains(e.Location))
-            {
+        for (var index = 0; index < TabCount; index++) {
+            if (GetTabRect(index).Contains(e.Location)) {
                 hovered = index;
                 break;
             }
         }
 
-        if (hoveredIndex != hovered)
-        {
+        if (hoveredIndex != hovered) {
             hoveredIndex = hovered;
             Invalidate();
         }
     }
 
-    protected override void OnMouseLeave(EventArgs e)
-    {
+    protected override void OnMouseLeave(EventArgs e) {
         base.OnMouseLeave(e);
         hoveredIndex = -1;
         Invalidate();

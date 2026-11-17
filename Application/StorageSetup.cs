@@ -5,15 +5,13 @@ namespace ReShadeCentralized;
 
 internal sealed record StorageLoadProgress(string Phase, int Completed = 0, int Total = 0);
 
-internal sealed class StorageLoadingIndicator : Control
-{
+internal sealed class StorageLoadingIndicator : Control {
     private readonly System.Windows.Forms.Timer animation = new() { Interval = 40 };
     private readonly Stopwatch elapsed = new();
     private StorageLoadProgress progress = new("Opening saved state");
     private bool busy;
 
-    public StorageLoadingIndicator()
-    {
+    public StorageLoadingIndicator() {
         Visible = false;
         TabStop = false;
         AccessibleRole = AccessibleRole.ProgressBar;
@@ -22,8 +20,7 @@ internal sealed class StorageLoadingIndicator : Control
         animation.Tick += (_, _) => Invalidate();
     }
 
-    internal void BeginLoading()
-    {
+    internal void BeginLoading() {
         busy = true;
         Text = "Loading central storage";
         AccessibleName = Text;
@@ -34,20 +31,16 @@ internal sealed class StorageLoadingIndicator : Control
         Invalidate();
     }
 
-    internal void Report(StorageLoadProgress value)
-    {
+    internal void Report(StorageLoadProgress value) {
         if (!busy)
-        {
             return;
-        }
 
         progress = value;
         AccessibleDescription = PhaseText();
         Invalidate();
     }
 
-    internal void EndLoading(string? failure = null)
-    {
+    internal void EndLoading(string? failure = null) {
         busy = false;
         elapsed.Stop();
         animation.Stop();
@@ -65,26 +58,22 @@ internal sealed class StorageLoadingIndicator : Control
     private void UpdateAnimation() =>
         animation.Enabled = busy && Visible && SystemInformation.UIEffectsEnabled;
 
-    protected override void OnVisibleChanged(EventArgs e)
-    {
+    protected override void OnVisibleChanged(EventArgs e) {
         base.OnVisibleChanged(e);
         UpdateAnimation();
     }
 
-    protected override void OnPaint(PaintEventArgs e)
-    {
+    protected override void OnPaint(PaintEventArgs e) {
         e.Graphics.Clear(DarkTheme.Input);
         float scale = DeviceDpi / 96f;
         float center = Width / 2f;
         float top = (Height / 2f) - (70 * scale);
 
-        if (busy)
-        {
+        if (busy) {
             var ring = new RectangleF(center - (20 * scale), top, 40 * scale, 40 * scale);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using var track = new Pen(DarkTheme.Border, 3 * scale);
-            using var accent = new Pen(DarkTheme.Accent, 3 * scale)
-            {
+            using var accent = new Pen(DarkTheme.Accent, 3 * scale) {
                 StartCap = LineCap.Round,
                 EndCap = LineCap.Round
             };
@@ -103,9 +92,7 @@ internal sealed class StorageLoadingIndicator : Control
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
         if (!busy)
-        {
             return;
-        }
 
         int width = Math.Min((int)(300 * scale), Math.Max(1, Width - (int)(64 * scale)));
         var bar = new Rectangle((Width - width) / 2, phase.Bottom + (int)(18 * scale), width, (int)(5 * scale));
@@ -113,13 +100,10 @@ internal sealed class StorageLoadingIndicator : Control
         using var fill = new SolidBrush(DarkTheme.Accent);
         e.Graphics.FillRectangle(background, bar);
 
-        if (progress.Total > 0)
-        {
+        if (progress.Total > 0) {
             float fraction = Math.Clamp((float)progress.Completed / progress.Total, 0, 1);
             e.Graphics.FillRectangle(fill, bar.X, bar.Y, bar.Width * fraction, bar.Height);
-        }
-        else
-        {
+        } else {
             int segment = Math.Max(1, width / 4);
             double cycle = SystemInformation.UIEffectsEnabled ? (elapsed.ElapsedMilliseconds % 1600) / 1600.0 : 0.4;
             int left = Math.Max(bar.Left, bar.Left - segment + (int)((width + segment) * cycle));
@@ -128,13 +112,27 @@ internal sealed class StorageLoadingIndicator : Control
         }
     }
 
-    protected override void Dispose(bool disposing)
-    {
+    protected override void Dispose(bool disposing) {
         if (disposing)
-        {
             animation.Dispose();
-        }
 
         base.Dispose(disposing);
+    }
+}
+
+internal sealed class SetupDialog : Form {
+    private readonly TextBox root = new() {
+        Text = StateStore.DefaultDirectory
+    };
+
+    public string CentralRoot => root.Text;
+
+    public SetupDialog() {
+        Text = "Setup \u2014 choose new or existing central storage";
+        ClientSize = new(720, 160);
+
+        TableLayoutPanel table = DialogLayout.Table(this);
+        DialogLayout.Row(table, "Central folder", DialogLayout.Browse(root, false));
+        DialogLayout.Buttons(table, this, "Continue");
     }
 }

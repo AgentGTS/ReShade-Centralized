@@ -2,8 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace ReShadeCentralized;
 
-internal static class DarkTheme
-{
+internal static class DarkTheme {
     private const int ImmersiveDarkModeAttribute = 20;
     private const int WindowCornerPreferenceAttribute = 33;
     private const int CaptionColorAttribute = 35;
@@ -40,8 +39,7 @@ internal static class DarkTheme
     public static Font HeadingFont { get; } = new("Segoe UI", 15, FontStyle.Bold);
     public static Font MonospaceFont { get; } = new("Consolas", 10);
 
-    public static void Apply(Form form)
-    {
+    public static void Apply(Form form) {
         form.Font = BodyFont;
         form.BackColor = Background;
         form.ForeColor = Text;
@@ -49,17 +47,12 @@ internal static class DarkTheme
         form.HandleCreated += (_, _) => ApplyWindowChrome(form);
 
         if (form.IsHandleCreated)
-        {
             ApplyWindowChrome(form);
-        }
     }
 
-    private static void ApplyControls(Control parent)
-    {
-        foreach (Control control in parent.Controls)
-        {
-            switch (control)
-            {
+    private static void ApplyControls(Control parent) {
+        foreach (Control control in parent.Controls) {
+            switch (control) {
                 case TabPage page:
                     page.BackColor = Surface;
                     page.ForeColor = Text;
@@ -95,8 +88,7 @@ internal static class DarkTheme
         }
     }
 
-    private static void ApplyGrid(DataGridView grid)
-    {
+    private static void ApplyGrid(DataGridView grid) {
         grid.BackgroundColor = Input;
         grid.BorderStyle = BorderStyle.None;
         grid.GridColor = Border;
@@ -105,8 +97,7 @@ internal static class DarkTheme
         grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
         grid.ColumnHeadersHeight = 42;
         grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-        grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
-        {
+        grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle {
             BackColor = Raised,
             ForeColor = Muted,
             SelectionBackColor = Raised,
@@ -114,8 +105,7 @@ internal static class DarkTheme
             Font = BodyFont,
             Padding = new Padding(12, 0, 8, 0)
         };
-        grid.DefaultCellStyle = new DataGridViewCellStyle
-        {
+        grid.DefaultCellStyle = new DataGridViewCellStyle {
             BackColor = Input,
             ForeColor = Text,
             SelectionBackColor = Selection,
@@ -127,15 +117,13 @@ internal static class DarkTheme
         grid.AllowUserToResizeRows = false;
     }
 
-    public static void DrawCheckBox(Graphics graphics, Rectangle bounds, bool selected, bool locked, int strokeWidth)
-    {
+    public static void DrawCheckBox(Graphics graphics, Rectangle bounds, bool selected, bool locked, int strokeWidth) {
         Color fill = selected ? (locked ? Raised : Accent) : Input;
         using var background = new SolidBrush(fill);
         using var border = new Pen(locked ? Muted : Accent);
         graphics.FillRectangle(background, bounds);
         graphics.DrawRectangle(border, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
-        if (selected)
-        {
+        if (selected) {
             int size = bounds.Width;
             using var tick = new Pen(locked ? Muted : OnAccent, strokeWidth);
             graphics.DrawLines(
@@ -148,16 +136,14 @@ internal static class DarkTheme
         }
     }
 
-    private static void ApplyWindowChrome(Form form)
-    {
+    private static void ApplyWindowChrome(Form form) {
         int darkMode = SystemInformation.HighContrast ? 0 : 1;
         int squareCorners = 1;
         // Unsupported DWM attributes are ignored by older Windows versions.
         DwmSetWindowAttribute(form.Handle, ImmersiveDarkModeAttribute, ref darkMode, sizeof(int));
         DwmSetWindowAttribute(form.Handle, WindowCornerPreferenceAttribute, ref squareCorners, sizeof(int));
 
-        if (!SystemInformation.HighContrast)
-        {
+        if (!SystemInformation.HighContrast) {
             int captionColor = Background.R | (Background.G << 8) | (Background.B << 16);
             int captionTextColor = Text.R | (Text.G << 8) | (Text.B << 16);
             DwmSetWindowAttribute(form.Handle, CaptionColorAttribute, ref captionColor, sizeof(int));

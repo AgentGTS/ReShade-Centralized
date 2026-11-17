@@ -1,9 +1,7 @@
 namespace ReShadeCentralized;
 
-internal sealed class HelpDialog : Form
-{
-    public HelpDialog()
-    {
+internal sealed class HelpDialog : Form {
+    public HelpDialog() {
         Text = "Help";
         ClientSize = new Size(780, 600);
         MinimumSize = new Size(600, 460);
@@ -14,23 +12,21 @@ internal sealed class HelpDialog : Form
         Font = DarkTheme.BodyFont;
         AutoScaleMode = AutoScaleMode.Dpi;
 
-        using Stream stream = typeof(HelpDialog).Assembly.GetManifestResourceStream("ReShadeCentralized.Help.txt")!;
-        using var reader = new StreamReader(stream);
-        var instructions = new TextBox
-        {
+        using var reader = new StreamReader(
+            typeof(HelpDialog).Assembly.GetManifestResourceStream("ReShadeCentralized.Help.txt")!);
+        var instructions = new TextBox {
             Multiline = true,
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
             WordWrap = true,
             Dock = DockStyle.Fill,
             Margin = Padding.Empty,
-            AccessibleName = "User guide",
+            AccessibleName = "Quick guide",
             Text = reader.ReadToEnd().ReplaceLineEndings(Environment.NewLine)
         };
         instructions.Select(0, 0);
 
-        var layout = new TableLayoutPanel
-        {
+        var layout = new TableLayoutPanel {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 2,
@@ -41,8 +37,7 @@ internal sealed class HelpDialog : Form
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(instructions, 0, 0);
 
-        var closeButton = new FlatButton("Close")
-        {
+        var closeButton = new FlatButton("Close") {
             DialogResult = DialogResult.OK,
             Anchor = AnchorStyles.Right,
             Margin = new Padding(0, 16, 0, 0)

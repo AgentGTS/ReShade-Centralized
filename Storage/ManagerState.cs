@@ -3,8 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace ReShadeCentralized;
 
-public sealed class ManagerState
-{
+public sealed class ManagerState {
     public int SchemaVersion { get; set; } = StateStore.CurrentSchemaVersion;
     public CentralPaths Paths { get; set; } = new();
 
@@ -21,17 +20,14 @@ public sealed class ManagerState
     public List<LayerRegistration> OwnedVulkanRegistrations { get; set; } = [];
     public List<VulkanAppEntry> OwnedVulkanApps { get; set; } = [];
 
-    public static JsonSerializerOptions Json { get; } = new()
-    {
+    public static JsonSerializerOptions Json { get; } = new() {
         WriteIndented = true,
-        Converters =
-        {
+        Converters = {
             new JsonStringEnumConverter()
         }
     };
 
-    public ManagerState Clone() => new()
-    {
+    public ManagerState Clone() => new() {
         SchemaVersion = SchemaVersion,
         Paths = new() { Root = Paths.Root },
         RuntimeVersions = new(RuntimeVersions),
@@ -46,4 +42,36 @@ public sealed class ManagerState
         OwnedVulkanRegistrations = [.. OwnedVulkanRegistrations],
         OwnedVulkanApps = [.. OwnedVulkanApps]
     };
+}
+
+public sealed class CentralPaths {
+    public string Root { get; set; } = "";
+
+    [JsonIgnore]
+    public string ShaderRoot => Path.Combine(Root, "reshade-shaders");
+
+    [JsonIgnore]
+    public string Shaders => Path.Combine(ShaderRoot, "shaders");
+
+    [JsonIgnore]
+    public string Textures => Path.Combine(ShaderRoot, "textures");
+
+    [JsonIgnore]
+    public string Profiles => Path.Combine(Root, "presets");
+
+    [JsonIgnore]
+    public string Screenshots => Path.Combine(Root, "screenshots");
+
+    [JsonIgnore]
+    public string StandardBinaries => Path.Combine(Root, "reshade-files");
+
+    [JsonIgnore]
+    public string AddonBinaries => Path.Combine(Root, "reshade-files-mod");
+
+    public static CentralPaths At(string root) => new() { Root = Path.GetFullPath(root) };
+
+    public string Binaries(RuntimeBuild build) => build == RuntimeBuild.Standard ? StandardBinaries : AddonBinaries;
+
+    public IEnumerable<string> Directories() =>
+        [Shaders, Textures, Profiles, Screenshots, StandardBinaries, AddonBinaries];
 }

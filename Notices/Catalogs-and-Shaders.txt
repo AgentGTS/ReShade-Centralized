@@ -1,22 +1,15 @@
-Upstream catalogs and shader packages
-
-Compatibility information:
-https://github.com/crosire/reshade-shaders/blob/list/Compatibility.ini
+Upstream shader catalog and shader packages
 
 Shader package information:
 https://github.com/crosire/reshade-shaders/blob/list/EffectPackages.ini
 
-These catalog files are not embedded or included in the source/release package.
-The app downloads them directly from upstream and keeps local caches in the
-user's central storage. Refresh catalog updates both caches. Without cached
-compatibility information, internal detection and manual API selection remain
-available. A small independently maintained shader fallback lists Standard
-effects and the MIT project's retained extra repository links.
+The upstream catalog is downloaded directly and cached in central storage.
+Refresh catalog updates this cache.
 
 An explicit redistribution license for the upstream list branch has not been
 established. Attribution and runtime downloading do not create a license grant.
-Do not treat these local caches as MIT/BSD-licensed parts of this application,
-or include them in redistributed copies without establishing permission.
+The catalog cache retains its upstream terms. Establish permission before
+including it in redistributed copies.
 
 Shader authors retain their respective rights. Repository links identify the
 sources; each package and its individual files may have different terms. This

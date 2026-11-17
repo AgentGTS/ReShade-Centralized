@@ -1,16 +1,17 @@
 namespace ReShadeCentralized;
 
-public sealed partial class MainForm
-{
-    private void LoadCatalog()
-    {
-        catalog = shaderCatalog.CachedCatalog();
-        SynchronizePackageChoices();
-        FilterPackages();
-    }
+public sealed partial class MainForm {
+    private readonly PackagesGrid packageList = new();
 
-    private void BuildPackages()
-    {
+    private readonly TextBox packageSearchBox = new() {
+        PlaceholderText = "Search shader packages\u2026"
+    };
+
+    private readonly HashSet<string> selectedPackageIds = new(StringComparer.OrdinalIgnoreCase);
+    private Button? applySelectionButton;
+    private List<ShaderPackage> catalog = [];
+
+    private void BuildPackages() {
         TableLayoutPanel layout = CreatePage("Shader packages");
         packageSearchBox.Dock = DockStyle.Fill;
         packageSearchBox.Margin = new Padding(0, 0, 0, 12);
@@ -28,7 +29,8 @@ public sealed partial class MainForm
             "Apply selection",
             ApplyPackagesAsync,
             primary: true,
-            isAvailable: () => selectedPackageIds.Count > 0 || storage.State is { Packages.Count: > 0 });
+            isAvailable: () => catalog.Count > 0
+                && (selectedPackageIds.Count > 0 || storage.State is { Packages.Count: > 0 }));
         commands.Controls.Add(applySelectionButton);
         commands.Controls.Add(CreateActionButton("Refresh catalog", OnRefreshCatalogAsync));
         commands.Controls.Add(CreateActionButton("Purge shader folder...", OnPurgeShaderFolderAsync,
@@ -36,91 +38,72 @@ public sealed partial class MainForm
         layout.Controls.Add(commands, 0, 2);
 
         packageSearchBox.TextChanged += (_, _) => FilterPackages();
-        packageList.PackageChecked += (package, selected) =>
-        {
+        packageList.PackageChecked += (package, selected) => {
             if (selected)
-            {
                 selectedPackageIds.Add(package.Id);
-            }
             else
-            {
                 selectedPackageIds.Remove(package.Id);
-            }
 
-            ExpandShaderDependencies();
-            packageList.SetChecks(selectedPackageIds, AvailablePackages());
+            List<ShaderPackage> packages = DisplayedPackages(catalog);
+            selectedPackageIds.UnionWith(ShaderDependencyIds(packages));
+            packageList.SetChecks(selectedPackageIds, packages);
             UpdateActionAvailability();
         };
     }
 
-    private List<ShaderPackage> AvailablePackages() => catalog
-        .Concat((storage.State?.Packages ?? [])
-            .Where(installed => !catalog.Any(package => package.Id == installed.Id))
-            .Select(ShaderLibrary.PackageDescriptor))
-        .ToList();
-
-    private void ExpandShaderDependencies()
-    {
-        List<ShaderPackage> packages = AvailablePackages();
-        ShaderPackage[] selected = packages.Where(package => selectedPackageIds.Contains(package.Id)).ToArray();
-
-        foreach (ShaderPackage dependency in ShaderDependencies.WithDependencies(selected, packages, (_, _) => { }))
-        {
-            selectedPackageIds.Add(dependency.Id);
+    private List<ShaderPackage> DisplayedPackages(IReadOnlyList<ShaderPackage> availableCatalog) {
+        var packages = new List<ShaderPackage>(availableCatalog);
+        if (storage.State is { Packages.Count: > 0 } state) {
+            var catalogIds = availableCatalog.Select(package => package.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            packages.AddRange(state.Packages.Where(installed => !catalogIds.Contains(installed.Id))
+                .Select(ShaderLibrary.PackageDescriptor));
         }
+
+        return packages;
     }
 
-    private void SynchronizePackageChoices()
-    {
+    private IEnumerable<string> ShaderDependencyIds(IReadOnlyList<ShaderPackage> packages) {
+        ShaderPackage[] selected = packages.Where(package => selectedPackageIds.Contains(package.Id)).ToArray();
+        return ShaderDependencies.WithDependencies(selected, packages, (_, _) => { }).Select(package => package.Id);
+    }
+
+    private void SynchronizePackageChoices() {
         selectedPackageIds.Clear();
-        foreach (string id in storage.State?.SelectedPackages ?? [])
-        {
+        foreach (string id in storage.State?.SelectedPackages ?? []) {
             selectedPackageIds.Add(id);
         }
 
-        if (selectedPackageIds.Count == 0)
-        {
-            foreach (InstalledPackage installed in storage.State?.Packages ?? [])
-            {
+        if (selectedPackageIds.Count == 0) {
+            foreach (InstalledPackage installed in storage.State?.Packages ?? []) {
                 selectedPackageIds.Add(installed.Id);
             }
 
-            foreach (ShaderPackage package in catalog.Where(package => package.Required || package.Enabled))
-            {
+            foreach (ShaderPackage package in catalog.Where(package => package.Required || package.Enabled)) {
                 selectedPackageIds.Add(package.Id);
             }
         }
 
-        ExpandShaderDependencies();
+        List<ShaderPackage> packages = DisplayedPackages(catalog);
+        selectedPackageIds.UnionWith(packages.Where(package => package.InstalledOnly).Select(package => package.Id));
+        selectedPackageIds.UnionWith(ShaderDependencyIds(packages));
     }
 
-    private void FilterPackages()
-    {
-        List<ShaderPackage> packages = AvailablePackages();
+    private void FilterPackages() {
         packageList.SetPackages(
-            packages.Where(package => $"{package.Name} {package.Description}"
-                .Contains(packageSearchBox.Text, StringComparison.OrdinalIgnoreCase)),
+            DisplayedPackages(catalog),
+            packageSearchBox.Text,
             selectedPackageIds,
             storage.State,
             ReferenceEquals(presentation?.State, storage.State) ? presentation?.PackageCompleteness : null);
-        packageList.SetChecks(selectedPackageIds, packages);
         UpdateActionAvailability();
     }
 
-    private void ResetPackageChoices()
-    {
-        packageList.CancelEdit();
-        SynchronizePackageChoices();
-        FilterPackages();
-    }
-
-    private async Task ApplyPackagesAsync()
-    {
+    private async Task ApplyPackagesAsync() {
         packageList.EndEdit();
-        List<ShaderPackage> packages = AvailablePackages();
+        List<ShaderPackage> currentCatalog = catalog;
         ShaderSelectionPlan plan = shaders.CreateShaderSelectionPlan(
-            packages.Where(package => selectedPackageIds.Contains(package.Id)).ToArray(),
-            packages);
+            DisplayedPackages(currentCatalog).Where(package => selectedPackageIds.Contains(package.Id)).ToArray(),
+            currentCatalog);
 
         if (plan.Removals.Count > 0 && MessageBox.Show(
             this,
@@ -132,24 +115,19 @@ public sealed partial class MainForm
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2) != DialogResult.Yes)
-        {
             return;
-        }
 
-        try
-        {
-            await RunOperationAsync("Applying shader selection", async cancellationToken =>
-            {
+        try {
+            await RunOperationAsync("Applying shader selection", async cancellationToken => {
                 PackageUpdateReport report = await shaders.ApplyShaderSelectionAsync(
                     plan,
-                    packages,
+                    currentCatalog,
                     progress,
                     cancellationToken,
                     removalsConfirmed: true);
                 WriteLog(report.Summary);
 
-                if (report.FailedCount > 0)
-                {
+                if (report.FailedCount > 0) {
                     tabs.SelectedIndex = 3;
                     MessageBox.Show(
                         this,
@@ -160,56 +138,40 @@ public sealed partial class MainForm
                         MessageBoxIcon.Warning);
                 }
             }, reportCompletion: false);
-        }
-        finally
-        {
+        } finally {
             FilterPackages();
         }
     }
 
-    private Task OnRefreshCatalogAsync()
-    {
-        ResetPackageChoices();
-        return RunOperationAsync("Refreshing catalog", async cancellationToken =>
-        {
-            catalog = await RefreshCatalogsAsync(cancellationToken);
-            ResetPackageChoices();
+    private Task OnRefreshCatalogAsync() {
+        packageList.EndEdit();
+        return RunOperationAsync("Refreshing catalog", async cancellationToken => {
+            List<ShaderPackage> refreshed = await shaderCatalog.RefreshAsync(progress, cancellationToken);
+            List<ShaderPackage> displayed = DisplayedPackages(refreshed);
+            IEnumerable<string> dependencies = ShaderDependencyIds(displayed);
+            cancellationToken.ThrowIfCancellationRequested();
+            catalog = refreshed;
+            selectedPackageIds.IntersectWith(displayed.Select(package => package.Id));
+            selectedPackageIds.UnionWith(dependencies);
         });
     }
 
-    private async Task<List<ShaderPackage>> RefreshCatalogsAsync(CancellationToken cancellationToken)
-    {
-        Task<List<ShaderPackage>> packages = shaderCatalog.CatalogAsync(progress, cancellationToken);
-        await Task.WhenAll(
-            packages,
-            CompatibilityCatalog.RefreshAsync(
-                downloads,
-                Path.Combine(storage.Store.DirectoryPath, CompatibilityCatalog.CacheName),
-                progress,
-                cancellationToken));
-        return await packages;
-    }
-
-    private async Task OnPurgeShaderFolderAsync()
-    {
+    private async Task OnPurgeShaderFolderAsync() {
         string root = storage.RequireState().Paths.ShaderRoot;
-        ResetPackageChoices();
         DialogResult answer = MessageBox.Show(
             this,
             "Delete all central shaders and textures, including custom and unmanaged files?\n\n" + root +
             "\n\nPresets, profiles and game-local shaders will be kept. Close affected games first. " +
-            "After purging, choose Apply selection to reinstall your selected packages.",
+            "After purging, choose Apply selection to reinstall selected packages still in the catalog.",
             "Purge shader folder",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2);
         if (answer != DialogResult.Yes)
-        {
             return;
-        }
 
+        packageList.EndEdit();
         await RunOperationAsync("Purging central shader folder",
             cancellationToken => shaders.PurgeShaderFolderAsync(progress, cancellationToken));
-        ResetPackageChoices();
     }
 }

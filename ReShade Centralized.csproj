@@ -19,21 +19,16 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Program.cs" />
     <Compile Include="Application\**\*.cs" />
-    <Compile Include="Controls\**\*.cs" />
-    <Compile Include="Downloads\**\*.cs" />
     <Compile Include="Games\**\*.cs" />
     <Compile Include="Runtimes\**\*.cs" />
     <Compile Include="Shaders\**\*.cs" />
     <Compile Include="Storage\**\*.cs" />
-    <Compile Include="Vulkan\**\*.cs" />
     <EmbeddedResource Include="Assets\Help.txt" LogicalName="ReShadeCentralized.Help.txt" />
     <EmbeddedResource Include="LICENSE.md" LogicalName="ReShadeCentralized.ApplicationLicense.txt" />
     <EmbeddedResource Include="Notices\*.txt" />
     <EmbeddedResource Include="$(GeneratedThirdPartyNotices)" LogicalName="ReShadeCentralized.ReleaseNotices.txt"
                       Condition="'$(GeneratedThirdPartyNotices)' != ''" />
-    <EmbeddedResource Include="Assets\ExtraPackages.ini" LogicalName="ReShadeCentralized.ExtraPackages.ini" />
     <EmbeddedResource Include="reshade_layers.ico" LogicalName="ReShadeCentralized.AppIcon.ico" />
   </ItemGroup>
 </Project>

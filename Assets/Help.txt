@@ -1,59 +1,25 @@
-GETTING STARTED
+Quick start
 
-Run ReShade Centralized as administrator. In Setup, keep Documents\ReShade Centralized or choose a storage folder outside the app folder. Keep that folder available when playing.
+1. Run as administrator. Pick a central folder outside the app and keep it available while you play.
+2. Close your games. In Runtime & storage, click Update ReShade. Then pick your shader packages and hit Apply selection.
+3. In Games, choose Install game and pick the game's actual .exe. Check graphics API can suggest an option. Choose the API and build, review any replacements, then install.
+4. Press Home in the game to open ReShade and save a preset.
 
-1. Close your games. Choose Runtime & storage > Update ReShade.
-2. Open Shader packages, check the packages you want, and choose Apply selection.
-3. Choose Games > Install game and select the game's .exe. Use Check graphics API if unsure, then choose the API and build yourself. Standard is suitable unless you need add-ons. For Vulkan, follow the steps below first.
-4. Review the changes and any replacement warning, then choose Install.
-5. Launch the game. Press Home to open ReShade, choose effects, and save your preset.
+Vulkan
 
-CHOOSING AN API AND ADD-ONS
+The layer is shared. Close your Vulkan games, pick its build in Runtime & storage, and hit Apply / repair before installing a Vulkan game. If another installer set up a disabled or explicit layer, use that installer to enable it. Use Manage game for an untracked game in the Vulkan list.
 
-Match the game's graphics mode: DirectX 9, DXGI (DirectX 10/11/12), OpenGL, or Vulkan. Choose Vulkan for DXVK or RTX Remix.
-For add-ons, choose Standard + add-on support. Select the game > Open profile and place its .addon32 or .addon64 files there, following the add-on author's instructions.
+Usage
 
-VULKAN GAMES
+- Repair / edit changes the executable, API, or build and fixes broken installs. Hover over a red or yellow warning for details. Yellow usually means your preset needs shaders you’re missing.
+- Open profile takes you to presets and add-ons. Choose Standard + add-on support if your game needs add-ons.
+- Save a copy of any custom files before approving replacements.
+- Uncheck a shader package and apply to remove it, including custom files in that package. Purge shader folder also deletes custom central shaders and textures.
+- Unregister removes verified links and the selected and default presets inside the profile. It keeps shared runtimes and external presets. Use Remove app-owned layers when no games need the shared Vulkan layer.
 
-Vulkan support is shared between games. Its build is chosen under Runtime & storage, rather than separately for each game.
+Problems
 
-1. Close your Vulkan games and finish Update ReShade.
-2. Under Runtime & storage > Vulkan - all games, choose a build and select Apply / repair.
-3. Choose Games > Install game, select the executable, choose Vulkan, review the changes, and install.
-4. Launch the game and press Home to configure ReShade.
-
-- Already listed under Vulkan games: select an entry without (Managed) and choose Manage game. For a (Managed) entry, use Games > Repair / edit.
-- Change the shared build: close your Vulkan games, choose the build under Runtime & storage, then Apply / repair. This affects Vulkan support installed by this app. Use the original installer to change support installed by another tool.
-- Disabled or explicit layer warning: use that layer's installer to enable it. Apply / repair will not override it.
-- Unregister keeps shared Vulkan support. Use Remove app-owned layers only when no games still need it. Keep it if unsure whether other games use it.
-
-EVERYDAY ACTIONS
-
-- Shader packages: check to add/update; uncheck installed packages to remove. Choose Apply selection or Update selected. Yellow marks additions; red marks removals. Removing a package also deletes custom files inside it. Required packages stay selected.
-- Update ReShade: close affected games, then Runtime & storage > Update ReShade. This downloads both official installers and updates their runtime files.
-- ReShade update check: Use the circular-arrow button left of Help. Check requests stable version tags from the official GitHub repository.
-- Change or repair a game's executable, API, or build: select it > Repair / edit. Each repair applies to the selected game.
-- Red game warning: the managed installation is missing or damaged. Hover for details, then use Repair / edit.
-- Yellow game warning: the selected preset needs effects missing from central packages and its configured game-local shader paths, or its files could not be checked. Hover for filenames and their recorded installed package, catalog package, possible packages, or unknown source. Catalog matches are suggestions and may be incomplete or out of date. Use Shader packages to install or restore the needed packages. Game-local effects count when ReShade can find them through EffectSearchPaths; ** includes subfolders. Legacy techniques without filenames cannot be fully checked. Disabled effects are excluded. Warnings refresh when returning to the app or Games tab.
-- Find presets and settings: select a game > Open profile.
-- Remove ReShade from a game: close it, then select it > Unregister. This removes verified app-owned injector/config links and deletes the selected and default presets inside its central profile. External/shared presets, other profile files, local shaders and shared runtimes are kept. Changed or unverifiable files are preserved and reported; a retained injector/config may still load ReShade.
-- Read credits and licenses: open Credits.
-
-EXISTING INSTALLATIONS AND APP UPDATES
-
-Back up custom files before approving replacements. Replaced files cannot be restored by Unregister. An existing selected preset is copied into the profile when available; the original is kept.
-Keep central storage when updating or replacing the app. After reinstalling, choose the same storage folder in Setup to reopen your games and presets. If an older beta's storage is rejected, follow the error message.
-
-IF SOMETHING DOES NOT WORK
-
-- Still loading: wait until the controls unlock. Choose Retry if loading fails.
-- Storage unavailable: reconnect its drive or return the folder to its original location, then Retry.
-- Storage in use: close other app instances using the same central folder, then Retry. Only one instance can change or recover that storage at a time.
-- Fresh setup requires an empty folder. Existing storage with valid settings can be reopened; unrelated files are preserved. Settings migrations keep an original copy under Backups.
-- ReShade does not appear: check the executable and API, run Update ReShade, then Repair / edit with the game closed. For Vulkan, also Apply / repair. Some games block ReShade.
-- Download fails: check your connection and retry. You can download Standard and add-on installers from https://reshade.me and use Import downloaded installers. Select Standard first. Imported Standard and add-on builds may use different versions; each installer must still contain matching 32-bit and 64-bit runtimes of its selected type.
-- Missing or modified shader files: back up custom files, then restore the package originals or use Purge shader folder followed by Apply selection. Purge deletes all central shaders and textures, including custom files.
-- File conflict or access denied: close the affected game and other ReShade installers, read the warning, and resolve the named files before retrying. Select that game and use Repair / edit to review replacements.
-- Recovery conflict: changed files and recovery data are kept instead of guessing which copy to restore. Back up both the named file and Recovery-v2, move the conflicting file aside, and Retry. Files with no verifiable recovery state may need manual restoration from the retained backup.
-- Other errors: check Activity. If the app closes unexpectedly, look for Crash.log beside the app.
-- Exit: use X or Alt+F4. If closing stalls, close again to exit immediately. Use Windows End task if the window is completely frozen.
+- ReShade missing? Check the .exe and API, update ReShade, then use Repair / edit. For Vulkan, try Apply / repair too.
+- Runtime download failing? Get both installers from reshade.me and use Import downloaded installers. Pick Standard first.
+- Storage offline? Reconnect the drive or restore the original path, then choose Retry. Choose folder... can open another valid store or start fresh in an empty folder.
+- Check Activity for errors and any files the app kept. Close the game before retrying a file conflict. If the app crashes, look for Crash.log beside it.

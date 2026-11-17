@@ -1,12 +1,9 @@
-ReShade - native behavior references and adapted implementation details
+ReShade runtime
 Source: https://github.com/crosire/reshade/tree/v6.8.0
 License: https://github.com/crosire/reshade/blob/v6.8.0/LICENSE.md
 
-The manager's bootstrap resolution, translation-layer handling, compatibility
-rule interpretation, and preset path handling reference the native ReShade
-installer/runtime. The manager uses its own managed implementation. This notice
-is retained for any adapted portions; it does not license separate catalogs or
-third-party shader repositories. ReShade's authors do not endorse this project.
+ReShade Centralized manages downloaded ReShade runtime files. This notice
+applies to ReShade. Catalogs and shader packages carry their own terms.
 
 Copyright 2014 Patrick Mours. All rights reserved.
 
